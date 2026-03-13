@@ -146,8 +146,14 @@ def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None):
             df_w["MACD"], df_w["Sig"], df_w["Hist"] = calc_macd(close_w)
         prix      = round(float(close_d.iloc[-1]), 4)
         variation = round(float((close_d.iloc[-1] / close_d.iloc[-2] - 1) * 100), 2)
+        # Fibo auto depuis le swing 6 mois
+        high_6m = float(df_d["High"].max() if not hasattr(df_d["High"], "columns") else df_d["High"].iloc[:, 0].max())
+        low_6m  = float(df_d["Low"].min()  if not hasattr(df_d["Low"],  "columns") else df_d["Low"].iloc[:, 0].min())
+        fibo_auto = {r: round(high_6m - (high_6m - low_6m) * r, 4) for r in [0.236, 0.382, 0.500, 0.618, 0.786]}
         return {
             "ok": True, "prix": prix, "variation": variation,
+            "swing": {"high": round(high_6m, 4), "low": round(low_6m, 4)},
+            "fibo_auto": fibo_auto,
             "daily": {
                 "rsi":       round(float(df_d["RSI"].iloc[-1]), 1),
                 "hist":      round(float(df_d["Hist"].iloc[-1]), 4),
@@ -162,7 +168,9 @@ def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None):
     except Exception as e:
         print(f"  [ERR] {ticker}: {e}")
         _empty = {"rsi": None, "hist": None, "crossover": "neutral"}
-        return {"ok": False, "prix": None, "variation": None, "daily": _empty.copy(), "weekly": _empty.copy()}
+        return {"ok": False, "prix": None, "variation": None,
+                "swing": {"high": None, "low": None}, "fibo_auto": {},
+                "daily": _empty.copy(), "weekly": _empty.copy()}
 
 # ── LOGIQUE SIGNAL ────────────────────────────────────────────────────────────
 
@@ -288,16 +296,58 @@ def fibo_pills(prix, zones, devise):
 def h(tag, cls, content):
     return "<" + tag + " class='" + cls + "'>" + content + "</" + tag + ">"
 
+def _fmt_level(level, devise):
+    if level is None: return "—"
+    if level >= 1000: return devise + "{:,.0f}".format(level)
+    if level >= 10:   return devise + "{:,.2f}".format(level)
+    return devise + "{:.4f}".format(level)
+
+def fibo_auto_pills(prix, fibo_auto, devise):
+    if not fibo_auto: return ""
+    out = "<div class='fibo-auto-row'><span class='fibo-auto-label'>FIBO AUTO ·</span>"
+    for r, level in fibo_auto.items():
+        in_zone = prix is not None and abs(prix - level) / level <= 0.02
+        cls = "fibo-pill active" if in_zone else "fibo-pill"
+        out += "<span class='" + cls + "' title='Fibo " + "{:.1f}".format(r*100) + "%'>" + "{:.1f}".format(r*100) + "% " + _fmt_level(level, devise) + "</span>"
+    out += "</div>"
+    return out
+
+def fibo_alert(prix, fibo_auto, static_zones, devise, swing):
+    if prix is None or not fibo_auto: return ""
+    best_r = min(fibo_auto, key=lambda r: abs(fibo_auto[r] - prix))
+    level  = fibo_auto[best_r]
+    dist   = (prix - level) / level * 100
+    out    = ""
+    direction = "au-dessus" if dist > 0 else "en-dessous"
+    if abs(dist) <= 1.0:
+        out += "<div class='fibo-alert-pill close'>⚠ PRIX SUR FIBO " + "{:.1f}".format(best_r*100) + "% — " + "{:+.1f}".format(dist) + "% " + direction + "</div>"
+    elif abs(dist) <= 3.0:
+        out += "<div class='fibo-alert-pill'>&#128205; Approche Fibo " + "{:.1f}".format(best_r*100) + "% — " + "{:+.1f}".format(dist) + "% " + direction + "</div>"
+    # Alerte niveaux statiques obsolètes (>15% d'écart)
+    if static_zones and fibo_auto:
+        auto_levels = list(fibo_auto.values())
+        for sz in static_zones:
+            if sz <= 0: continue
+            nearest = min(auto_levels, key=lambda x: abs(x - sz))
+            if abs(nearest - sz) / sz > 0.15:
+                sh = _fmt_level(swing["high"], devise) if swing and swing["high"] else "—"
+                sl = _fmt_level(swing["low"],  devise) if swing and swing["low"]  else "—"
+                out += "<div class='fibo-recalib-pill'>&#x1F504; Niveaux a recalibrer · swing " + sl + " → " + sh + "</div>"
+                break
+    return out
+
 def build_card(key, cfg, d, sig):
-    prix_val = d["prix"]      if d else None
-    var_val  = d["variation"] if d else None
-    rsi_d    = d["daily"]["rsi"]       if d else None
-    rsi_w    = d["weekly"]["rsi"]      if d else None
-    cd       = d["daily"]["crossover"]  if d else "neutral"
-    cw       = d["weekly"]["crossover"] if d else "neutral"
-    var_str  = ("+" if var_val and var_val > 0 else "") + (str(var_val) + "%" if var_val is not None else "—")
-    var_cls  = "up" if var_val and var_val > 0 else ("down" if var_val and var_val < 0 else "flat")
-    color    = sig["color"]
+    prix_val  = d["prix"]      if d else None
+    var_val   = d["variation"] if d else None
+    rsi_d     = d["daily"]["rsi"]       if d else None
+    rsi_w     = d["weekly"]["rsi"]      if d else None
+    cd        = d["daily"]["crossover"]  if d else "neutral"
+    cw        = d["weekly"]["crossover"] if d else "neutral"
+    fa        = d.get("fibo_auto", {})  if d else {}
+    swing     = d.get("swing")          if d else None
+    var_str   = ("+" if var_val and var_val > 0 else "") + (str(var_val) + "%" if var_val is not None else "—")
+    var_cls   = "up" if var_val and var_val > 0 else ("down" if var_val and var_val < 0 else "flat")
+    color     = sig["color"]
 
     return (
         "<div class='asset-card " + color + "'>"
@@ -316,6 +366,8 @@ def build_card(key, cfg, d, sig):
         + "<div class='ind-block'>" + h("div","ind-label","MACD W")      + h("div","ind-value "+mc(cw), ml(cw)) + "</div>"
         + "</div>"
         + "<div class='fibo-zones'>" + fibo_pills(prix_val, cfg["fibo_zones"], cfg["devise"]) + "</div>"
+        + fibo_auto_pills(prix_val, fa, cfg["devise"])
+        + fibo_alert(prix_val, fa, cfg["fibo_zones"], cfg["devise"], swing)
         + "</div>"
     )
 
@@ -409,6 +461,12 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 .fibo-pill.active{background:rgba(61,122,237,.12);border-color:rgba(61,122,237,.4);color:#7ab4ff}
 .error-note{background:var(--red-bg);border:1px solid rgba(255,71,87,.3);border-radius:6px;padding:10px 14px;font-size:11px;color:var(--red);margin-bottom:16px}
 .footer{margin-top:28px;padding-top:16px;border-top:1px solid var(--border);color:var(--text-dim);font-size:10px;text-align:center;line-height:2}
+.fibo-auto-row{margin-top:6px;display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+.fibo-auto-label{font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;white-space:nowrap}
+.fibo-alert-pill{display:block;padding:4px 10px;border-radius:4px;font-size:10px;font-weight:600;background:rgba(255,238,88,.12);border:1px solid rgba(255,238,88,.4);color:var(--yellow);margin-top:6px;text-align:center}
+.fibo-alert-pill.close{background:rgba(255,167,38,.15);border-color:rgba(255,167,38,.6);color:var(--orange);animation:pulse-border 1.5s ease-in-out infinite}
+@keyframes pulse-border{0%,100%{border-color:rgba(255,167,38,.6)}50%{border-color:rgba(255,167,38,1)}}
+.fibo-recalib-pill{display:block;padding:3px 8px;border-radius:3px;font-size:10px;background:rgba(84,110,122,.12);border:1px dashed var(--gray);color:var(--gray);margin-top:4px;text-align:center}
 """
 
 # ── BUILD FULL HTML ───────────────────────────────────────────────────────────
