@@ -43,6 +43,7 @@ jobs:
         run: |
           mkdir -p _site
           cp dashboard.html _site/index.html
+          cp claude_update.txt _site/claude_update.txt
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
