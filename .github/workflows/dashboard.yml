@@ -1,0 +1,54 @@
+name: Portfolio Signal Dashboard
+
+on:
+  schedule:
+    - cron: '0 7 * * 1-5'   # Lun-Ven à 9h Paris (heure d'hiver) / 8h UTC
+    - cron: '0 6 * * 1-5'   # Lun-Ven à 8h Paris (heure d'été)
+  workflow_dispatch:          # Déclenchement manuel depuis GitHub
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install yfinance pandas numpy requests
+
+      - name: Generate dashboard
+        run: python dashboard_claude.py
+        env:
+          CI: true
+
+      - name: Prepare GitHub Pages
+        run: |
+          mkdir -p _site
+          cp dashboard.html _site/index.html
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '_site'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

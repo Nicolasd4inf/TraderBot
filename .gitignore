@@ -1,0 +1,31 @@
+# Secrets
+.env
+*.key
+*.pem
+
+# Fichiers générés
+dashboard.html
+claude_update.txt
+
+# Logs
+logs/
+*.log
+
+# Modèles ML (trop lourds pour git)
+*.zip
+
+# Images / PDF
+*.png
+*.pdf
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Données sensibles
+*.json
+sentiment_test.json
