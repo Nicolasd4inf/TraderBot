@@ -147,13 +147,37 @@ def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None):
         prix      = round(float(close_d.iloc[-1]), 4)
         variation = round(float((close_d.iloc[-1] / close_d.iloc[-2] - 1) * 100), 2)
         # Fibo auto depuis le swing 6 mois
-        high_6m = float(df_d["High"].max() if not hasattr(df_d["High"], "columns") else df_d["High"].iloc[:, 0].max())
-        low_6m  = float(df_d["Low"].min()  if not hasattr(df_d["Low"],  "columns") else df_d["Low"].iloc[:, 0].min())
+        def _col(df, col):
+            c = df[col]
+            return c.iloc[:, 0] if hasattr(c, "columns") else c
+        high_6m = float(_col(df_d, "High").max())
+        low_6m  = float(_col(df_d, "Low").min())
         fibo_auto = {r: round(high_6m - (high_6m - low_6m) * r, 4) for r in [0.236, 0.382, 0.500, 0.618, 0.786]}
+        # OHLCV pour le chart (90 derniers jours)
+        ohlcv = []
+        vol_s = _col(df_d, "Volume")
+        for i in range(len(df_d)):
+            try:
+                t = df_d.index[i]
+                t = t.date().isoformat() if hasattr(t, "date") else str(t)[:10]
+                o = round(float(_col(df_d, "Open").iloc[i]),  4)
+                c = round(float(_col(df_d, "Close").iloc[i]), 4)
+                ohlcv.append({
+                    "time":   t,
+                    "open":   o,
+                    "high":   round(float(_col(df_d, "High").iloc[i]), 4),
+                    "low":    round(float(_col(df_d, "Low").iloc[i]),  4),
+                    "close":  c,
+                    "volume": int(float(vol_s.iloc[i])),
+                    "up":     c >= o,
+                })
+            except Exception:
+                pass
         return {
             "ok": True, "prix": prix, "variation": variation,
             "swing": {"high": round(high_6m, 4), "low": round(low_6m, 4)},
             "fibo_auto": fibo_auto,
+            "ohlcv": ohlcv,
             "daily": {
                 "rsi":       round(float(df_d["RSI"].iloc[-1]), 1),
                 "hist":      round(float(df_d["Hist"].iloc[-1]), 4),
@@ -169,8 +193,51 @@ def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None):
         print(f"  [ERR] {ticker}: {e}")
         _empty = {"rsi": None, "hist": None, "crossover": "neutral"}
         return {"ok": False, "prix": None, "variation": None,
-                "swing": {"high": None, "low": None}, "fibo_auto": {},
+                "swing": {"high": None, "low": None}, "fibo_auto": {}, "ohlcv": [],
                 "daily": _empty.copy(), "weekly": _empty.copy()}
+
+# ── ZONES SUPPORT / RÉSISTANCE ────────────────────────────────────────────────
+
+def detect_sr_zones(ohlcv, prix, window=5, tolerance=0.015):
+    """
+    Détecte les zones S/R depuis les données OHLCV.
+    - window    : bougies de chaque côté pour valider un swing
+    - tolerance : regroupe les niveaux à moins de 1.5% d'écart
+    Retourne une liste de zones triées par force (touches desc).
+    """
+    if len(ohlcv) < window * 2 + 1:
+        return []
+    levels = []
+    for i in range(window, len(ohlcv) - window):
+        hi  = ohlcv[i]["high"]
+        lo  = ohlcv[i]["low"]
+        nbh = [c["high"] for c in ohlcv[i-window:i+window+1]]
+        nbl = [c["low"]  for c in ohlcv[i-window:i+window+1]]
+        if hi == max(nbh):
+            levels.append({"price": hi, "type": "resistance"})
+        if lo == min(nbl):
+            levels.append({"price": lo, "type": "support"})
+    levels.sort(key=lambda x: x["price"])
+    # Clustering
+    clusters = []
+    for lv in levels:
+        if clusters and abs(lv["price"] - clusters[-1]["price"]) / clusters[-1]["price"] < tolerance:
+            c = clusters[-1]
+            c["price"]   = round((c["price"] * c["touches"] + lv["price"]) / (c["touches"] + 1), 4)
+            c["touches"] += 1
+            if lv["type"] != c["type"]:
+                c["type"] = "both"
+        else:
+            clusters.append({"price": lv["price"], "type": lv["type"], "touches": 1})
+    # Score et filtre (±30% du prix actuel)
+    result = []
+    for c in clusters:
+        if prix and abs(c["price"] - prix) / prix > 0.30:
+            continue
+        c["strength"] = "strong" if c["touches"] >= 3 else ("medium" if c["touches"] == 2 else "weak")
+        result.append(c)
+    result.sort(key=lambda x: x["touches"], reverse=True)
+    return result[:10]
 
 # ── LOGIQUE SIGNAL ────────────────────────────────────────────────────────────
 
@@ -368,6 +435,8 @@ def build_card(key, cfg, d, sig):
         + "<div class='fibo-zones'>" + fibo_pills(prix_val, cfg["fibo_zones"], cfg["devise"]) + "</div>"
         + fibo_auto_pills(prix_val, fa, cfg["devise"])
         + fibo_alert(prix_val, fa, cfg["fibo_zones"], cfg["devise"], swing)
+        + "<button class='chart-toggle' onclick=\"var w=this.nextElementSibling;w.classList.toggle('open');this.textContent=w.classList.contains('open')?'▲ Masquer le chart':'▼ Afficher le chart';\">▼ Afficher le chart</button>"
+        + "<div class='chart-wrap' id='chart-" + key + "' style='height:220px'></div>"
         + "</div>"
     )
 
@@ -391,11 +460,11 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
   background-image:linear-gradient(rgba(61,122,237,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(61,122,237,.03) 1px,transparent 1px);
   background-size:40px 40px}
 .wrapper{position:relative;z-index:1;max-width:1400px;margin:0 auto}
-.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:20px;border-bottom:1px solid var(--border)}
+.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:20px;border-bottom:1px solid var(--border);gap:16px}
 .header-left h1{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;color:var(--text-bright);letter-spacing:-.5px}
 .header-left h1 span{color:var(--accent)}
 .subtitle{color:var(--text-dim);font-size:11px;margin-top:4px;letter-spacing:1px;text-transform:uppercase}
-.timestamp{text-align:right;color:var(--text-dim);font-size:11px;line-height:1.8}
+.timestamp{text-align:right;color:var(--text-dim);font-size:11px;line-height:1.8;flex-shrink:0}
 .timestamp .date{color:var(--gold);font-size:14px;font-weight:600}
 .conditions-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:24px}
 .cond-pill{padding:10px 14px;border-radius:6px;border:1px solid}
@@ -433,7 +502,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 .card-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px}
 .asset-name{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--text-bright)}
 .asset-ticker{font-size:10px;color:var(--text-dim);margin-top:1px;letter-spacing:1px}
-.price-block{text-align:right}
+.price-block{text-align:right;flex-shrink:0}
 .price-value{font-family:'Syne',sans-serif;font-size:18px;font-weight:700;color:var(--gold)}
 .price-change{font-size:11px;margin-top:1px}
 .price-change.up{color:var(--green)}
@@ -461,17 +530,36 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 .fibo-pill.active{background:rgba(61,122,237,.12);border-color:rgba(61,122,237,.4);color:#7ab4ff}
 .error-note{background:var(--red-bg);border:1px solid rgba(255,71,87,.3);border-radius:6px;padding:10px 14px;font-size:11px;color:var(--red);margin-bottom:16px}
 .footer{margin-top:28px;padding-top:16px;border-top:1px solid var(--border);color:var(--text-dim);font-size:10px;text-align:center;line-height:2}
+.chart-toggle{width:100%;margin-top:10px;padding:5px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:10px;font-family:'JetBrains Mono',monospace;cursor:pointer;text-align:center;letter-spacing:1px;text-transform:uppercase}
+.chart-toggle:hover{border-color:var(--accent);color:var(--accent)}
+.chart-wrap{display:none;margin-top:8px;border-radius:4px;overflow:hidden}
+.chart-wrap.open{display:block}
 .fibo-auto-row{margin-top:6px;display:flex;gap:5px;flex-wrap:wrap;align-items:center}
 .fibo-auto-label{font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;white-space:nowrap}
 .fibo-alert-pill{display:block;padding:4px 10px;border-radius:4px;font-size:10px;font-weight:600;background:rgba(255,238,88,.12);border:1px solid rgba(255,238,88,.4);color:var(--yellow);margin-top:6px;text-align:center}
 .fibo-alert-pill.close{background:rgba(255,167,38,.15);border-color:rgba(255,167,38,.6);color:var(--orange);animation:pulse-border 1.5s ease-in-out infinite}
 @keyframes pulse-border{0%,100%{border-color:rgba(255,167,38,.6)}50%{border-color:rgba(255,167,38,1)}}
 .fibo-recalib-pill{display:block;padding:3px 8px;border-radius:3px;font-size:10px;background:rgba(84,110,122,.12);border:1px dashed var(--gray);color:var(--gray);margin-top:4px;text-align:center}
+@media(max-width:900px){
+  .conditions-bar{grid-template-columns:repeat(2,1fr)}
+  .scenario-bar{grid-template-columns:repeat(2,1fr)}
+  .assets-grid{grid-template-columns:1fr}
+  body{padding:12px}
+}
+@media(max-width:520px){
+  .conditions-bar{grid-template-columns:1fr}
+  .scenario-bar{grid-template-columns:1fr}
+  .header{flex-direction:column}
+  .timestamp{text-align:left}
+  .price-value{font-size:15px}
+  body{padding:8px}
+  .cond-value{font-size:13px}
+}
 """
 
 # ── BUILD FULL HTML ───────────────────────────────────────────────────────────
 
-def build_html(now, cards_by_cat, conds, errors):
+def build_html(now, cards_by_cat, conds, errors, charts_json="{}"):
 
     def cond_pill(color, label_top, value, status):
         return (
@@ -549,7 +637,65 @@ def build_html(now, cards_by_cat, conds, errors):
 
         + "<div class='footer'>Donnees : Yahoo Finance · MACD(12,26,9) + RSI(14) · Niveaux Fibonacci"
         + "<br>Analyse personnelle — Pas un conseil financier · Relancer le script pour actualiser</div>"
-        + "</div></body></html>"
+        + "</div>"
+        + "<script src='https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js'></script>"
+        + "<script>"
+        + "const CHARTS=(" + charts_json + ");"
+        + """
+document.addEventListener('DOMContentLoaded',function(){
+  for(const [key,d] of Object.entries(CHARTS)){
+    const el=document.getElementById('chart-'+key);
+    if(!el||!d.ohlcv||!d.ohlcv.length) continue;
+    const chart=LightweightCharts.createChart(el,{
+      width:el.clientWidth,height:260,
+      layout:{background:{color:'#0d1420'},textColor:'#c8d8f0'},
+      grid:{vertLines:{color:'#1e2d45'},horzLines:{color:'#1e2d45'}},
+      timeScale:{borderColor:'#1e2d45',timeVisible:true},
+      rightPriceScale:{borderColor:'#1e2d45',scaleMargins:{top:0.08,bottom:0.22}},
+      crosshair:{mode:LightweightCharts.CrosshairMode.Normal},
+    });
+    // Bougies
+    const candles=chart.addCandlestickSeries({
+      upColor:'#00e676',downColor:'#ff4757',
+      borderVisible:false,
+      wickUpColor:'#00e676',wickDownColor:'#ff4757',
+    });
+    candles.setData(d.ohlcv.map(c=>({time:c.time,open:c.open,high:c.high,low:c.low,close:c.close})));
+    // Volume (histogramme superposé, échelle séparée)
+    const volSeries=chart.addHistogramSeries({
+      priceFormat:{type:'volume'},
+      priceScaleId:'vol',
+    });
+    chart.priceScale('vol').applyOptions({scaleMargins:{top:0.82,bottom:0},borderVisible:false});
+    volSeries.setData(d.ohlcv.map(c=>({
+      time:c.time,value:c.volume,
+      color:c.up?'rgba(0,230,118,0.25)':'rgba(255,71,87,0.25)',
+    })));
+    // Zones S/R uniquement
+    const srColors={resistance:'#ff4757',support:'#00e676',both:'#ffa726'};
+    for(const z of (d.zones||[])){
+      candles.createPriceLine({
+        price:z.price,
+        color:srColors[z.type]||'#ffa726',
+        lineWidth:z.strength==='strong'?2:1,
+        lineStyle:z.strength==='weak'?LightweightCharts.LineStyle.Dashed:LightweightCharts.LineStyle.Solid,
+        axisLabelVisible:z.strength!=='weak',
+        title:z.strength==='strong'?'● '+z.type.toUpperCase():'○',
+      });
+    }
+    // Prix actuel
+    if(d.prix) candles.createPriceLine({
+      price:d.prix,color:'#ffd54f',lineWidth:1,
+      lineStyle:LightweightCharts.LineStyle.Dashed,
+      axisLabelVisible:true,title:'▶',
+    });
+    chart.timeScale().fitContent();
+    new ResizeObserver(()=>chart.applyOptions({width:el.clientWidth})).observe(el);
+  }
+});
+"""
+        + "</script>"
+        + "</body></html>"
     )
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
@@ -609,7 +755,21 @@ def generate_dashboard():
         "bt_d":  "Signal long terme actif" if bt_c in ["bullish","bullish_cross"] else "Signal absent — Ne pas acheter",
     }
 
-    html = build_html(now, cards_by_cat, conds, errors)
+    # Données chart par actif
+    import json as _json
+    charts_data = {}
+    for key, d in all_data.items():
+        if not d or not d.get("ok") or not d.get("ohlcv"):
+            continue
+        charts_data[key] = {
+            "prix":      d["prix"],
+            "ohlcv":     d["ohlcv"],
+            "fibo_auto": {str(r): v for r, v in d.get("fibo_auto", {}).items()},
+            "zones":     detect_sr_zones(d["ohlcv"], d["prix"]),
+        }
+    charts_json = _json.dumps(charts_data, ensure_ascii=False)
+
+    html = build_html(now, cards_by_cat, conds, errors, charts_json)
     out  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard.html")
     with open(out, "w", encoding="utf-8") as f:
         f.write(html)
