@@ -2,8 +2,7 @@ name: Portfolio Signal Dashboard
 
 on:
   schedule:
-    - cron: '0 7 * * 1-5'   # Lun-Ven à 9h Paris (heure d'hiver) / 8h UTC
-    - cron: '0 6 * * 1-5'   # Lun-Ven à 8h Paris (heure d'été)
+    - cron: '0 8-16 * * *'  # Tous les jours toutes les heures de 9h à 17h (UTC+1 hiver)
   workflow_dispatch:          # Déclenchement manuel depuis GitHub
 
 permissions:
