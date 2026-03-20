@@ -27,15 +27,17 @@ from datetime import datetime
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 
 ASSETS = {
-    "PPFB":  {"ticker": "PPFB.PA",   "nom": "Or — iShares Physical Gold",    "categorie": "metaux",  "devise": "€", "fibo_zones": [84, 78.5, 72],         "stop": 68,  "ticker_fallback": "PPFB.DE", "isin": "IE00B4ND3602"},
-    "XAD6":  {"ticker": "XAD6.DE",   "nom": "Argent — Xtrackers Silver",     "categorie": "metaux",  "devise": "€", "fibo_zones": [660, 555, 480],        "stop": 400},
-    "BTC":   {"ticker": "BTC-USD",   "nom": "Bitcoin",                        "categorie": "crypto",  "devise": "$", "fibo_zones": [70750, 57800, 39200],  "stop": 32000},
-    "EURUSD":{"ticker": "EURUSD=X",  "nom": "EUR/USD",                        "categorie": "macro",   "devise": "",  "fibo_zones": [1.145, 1.108, 1.081],  "stop": None},
-    "BRENT": {"ticker": "BZ=F",      "nom": "Brent Crude",                    "categorie": "macro",   "devise": "$", "fibo_zones": [90, 85],               "stop": None},
-    "PUST":  {"ticker": "PUST.PA",   "nom": "Nasdaq 100 — Amundi PEA",       "categorie": "actions", "devise": "€", "fibo_zones": [84, 78.5, 74],         "stop": 61},
-    "PSP5":  {"ticker": "PSP5.PA",   "nom": "S&P 500 — Amundi PEA",          "categorie": "actions", "devise": "€", "fibo_zones": [49.75, 47.12, 45],     "stop": 39},
-    "PTPXE": {"ticker": "PTPXE.PA",  "nom": "Japon TOPIX — Amundi PEA",      "categorie": "actions", "devise": "€", "fibo_zones": [32.99, 30.5, 28.5],   "stop": 20},
-    "PAASI": {"ticker": "PAASI.PA",  "nom": "Asia Emergente — Amundi PEA",   "categorie": "actions", "devise": "€", "fibo_zones": [30.61, 28.19, 26.25], "stop": 18},
+    "PPFB":  {"ticker": "PPFB.PA",  "nom": "Or — iShares Physical Gold",   "categorie": "metaux",  "devise": "€", "fibo_zones": [87.86, 77.81, 74.71, 71.61],    "stop": 62,  "ticker_fallback": "PPFB.DE", "isin": "IE00B4ND3602", "euronext_mic": "XPAR"},
+    "GOLD":  {"ticker": "GOLD.PA",  "nom": "Or — Amundi Physical Gold",    "categorie": "metaux",  "devise": "€", "fibo_zones": [179.76, 159.13, 152.75, 146.38], "stop": 125, "isin": "FR0013416716",  "euronext_mic": "XPAR", "ticker_rt": "GOLD-EUR.PA"},
+    "XAD6":  {"ticker": "XAD6.DE",  "nom": "Argent — Xtrackers Silver",    "categorie": "metaux",  "devise": "€", "fibo_zones": [893.50, 685.49, 621.23, 556.97], "stop": 349, "isin": "DE000A0S9GB0"},
+    "PHAG":  {"ticker": "PHAG.AS",  "nom": "Argent — WisdomTree Physical", "categorie": "metaux",  "devise": "€", "fibo_zones": [86.91, 60.91, 52.88, 44.85],    "stop": 18,  "isin": "JE00B1VS3333",  "euronext_mic": "XAMS"},
+    "BTC":   {"ticker": "BTC-USD",  "nom": "Bitcoin",                       "categorie": "crypto",  "devise": "$", "fibo_zones": [124753, 101049, 93727, 86405],   "stop": 62700},
+    "EURUSD":{"ticker": "EURUSD=X", "nom": "EUR/USD",                       "categorie": "macro",   "devise": "",  "fibo_zones": [1.2018, 1.1795, 1.1726, 1.1658], "stop": None},
+    "BRENT": {"ticker": "BZ=F",     "nom": "Brent Crude",                   "categorie": "macro",   "devise": "$", "fibo_zones": [108.65, 89.65, 83.79, 77.92],   "stop": None},
+    "PUST":  {"ticker": "PUST.PA",  "nom": "Nasdaq 100 — Amundi PEA",      "categorie": "actions", "devise": "€", "fibo_zones": [90.28, 87.63, 86.81, 85.98],    "stop": 61,  "isin": "FR0013412285",  "euronext_mic": "XPAR"},
+    "PSP5":  {"ticker": "PSP5.PA",  "nom": "S&P 500 — Amundi PEA",         "categorie": "actions", "devise": "€", "fibo_zones": [52.51, 51.33, 50.96, 50.60],    "stop": 39,  "isin": "FR0013412020",  "euronext_mic": "XPAR"},
+    "PTPXE": {"ticker": "PTPXE.PA", "nom": "Japon TOPIX — Amundi PEA",     "categorie": "actions", "devise": "€", "fibo_zones": [36.80, 34.39, 33.65, 32.91],    "stop": 20,  "isin": "FR0013407236",  "euronext_mic": "XPAR"},
+    "PAASI": {"ticker": "PAASI.PA", "nom": "Asia Emergente — Amundi PEA",  "categorie": "actions", "devise": "€", "fibo_zones": [35.04, 32.53, 31.76, 30.98],    "stop": 18,  "isin": "FR0011440478",  "euronext_mic": "XPAR"},
 }
 
 TRIGGERS = {
@@ -77,6 +79,7 @@ def detect_crossover(macd_line, signal_line):
         return "bearish_cross"
     return "bullish" if m.iloc[-1] > s.iloc[-1] else "bearish"
 
+
 def fetch_tradegate_price(isin):
     """
     Récupère le prix en temps réel depuis Tradegate Exchange.
@@ -112,21 +115,21 @@ def fetch_tradegate_price(isin):
     return None
 
 
-def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None):
+def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None, ticker_rt=None):
     try:
         tk   = yf.Ticker(ticker)
-        df_d = tk.history(period="6mo",  interval="1d")
+        df_d = tk.history(period="1y",   interval="1d")   # 1 an pour MA200
         df_w = tk.history(period="2y",   interval="1wk")
         # Fallback ticker Yahoo Finance si données vides
         if df_d.empty and ticker_fallback:
-            print(f"  [INFO] {ticker} vide → essai {ticker_fallback}")
+            print(f"  [INFO] {ticker} vide -> essai {ticker_fallback}")
             tk   = yf.Ticker(ticker_fallback)
-            df_d = tk.history(period="6mo", interval="1d")
+            df_d = tk.history(period="1y",  interval="1d")
             df_w = tk.history(period="2y",  interval="1wk")
         if df_d.empty:
             # Dernier recours : prix Tradegate uniquement (pas d'indicateurs)
             if isin_fallback:
-                print(f"  [INFO] {ticker} → tentative prix Tradegate ({isin_fallback})")
+                print(f"  [INFO] {ticker} -> tentative prix Tradegate ({isin_fallback})")
                 prix_tg = fetch_tradegate_price(isin_fallback)
                 if prix_tg:
                     _empty = {"rsi": None, "hist": None, "crossover": "neutral"}
@@ -139,6 +142,17 @@ def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None):
             return c.iloc[:, 0] if hasattr(c, "columns") else c
         close_d = _close(df_d)
         close_w = _close(df_w) if not df_w.empty else None
+
+        # MA50 / MA200 sur la série complète 1 an
+        ma50_s  = close_d.rolling(50).mean()
+        ma200_s = close_d.rolling(200).mean()
+        ma50_val  = round(float(ma50_s.iloc[-1]),  4) if not pd.isna(ma50_s.iloc[-1])  else None
+        ma200_val = round(float(ma200_s.iloc[-1]), 4) if not pd.isna(ma200_s.iloc[-1]) else None
+        if ma50_val and ma200_val:
+            ma_cross = "golden" if ma50_val > ma200_val else "death"
+        else:
+            ma_cross = None
+
         df_d["RSI"]  = calc_rsi(close_d)
         df_d["MACD"], df_d["Sig"], df_d["Hist"] = calc_macd(close_d)
         if not df_w.empty:
@@ -146,38 +160,123 @@ def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None):
             df_w["MACD"], df_w["Sig"], df_w["Hist"] = calc_macd(close_w)
         prix      = round(float(close_d.iloc[-1]), 4)
         variation = round(float((close_d.iloc[-1] / close_d.iloc[-2] - 1) * 100), 2)
-        # Fibo auto depuis le swing 6 mois
+
+        # Fibo auto depuis le swing 6 mois (dernières 126 bougies)
         def _col(df, col):
             c = df[col]
             return c.iloc[:, 0] if hasattr(c, "columns") else c
-        high_6m = float(_col(df_d, "High").max())
-        low_6m  = float(_col(df_d, "Low").min())
+        df_6m   = df_d.iloc[-126:]
+        high_6m = float(_col(df_6m, "High").max())
+        low_6m  = float(_col(df_6m, "Low").min())
         fibo_auto = {r: round(high_6m - (high_6m - low_6m) * r, 4) for r in [0.236, 0.382, 0.500, 0.618, 0.786]}
-        # OHLCV pour le chart (90 derniers jours)
-        ohlcv = []
-        vol_s = _col(df_d, "Volume")
-        for i in range(len(df_d)):
+
+        # OHLCV pour le chart (6 derniers mois) + séries MA alignées
+        ohlcv      = []
+        ma50_data  = []
+        ma200_data = []
+        vol_s      = _col(df_6m, "Volume")
+        ma50_6m    = ma50_s.iloc[-126:]
+        ma200_6m   = ma200_s.iloc[-126:]
+        for i in range(len(df_6m)):
             try:
-                t = df_d.index[i]
+                t = df_6m.index[i]
                 t = t.date().isoformat() if hasattr(t, "date") else str(t)[:10]
-                o = round(float(_col(df_d, "Open").iloc[i]),  4)
-                c = round(float(_col(df_d, "Close").iloc[i]), 4)
+                o = round(float(_col(df_6m, "Open").iloc[i]),  4)
+                c = round(float(_col(df_6m, "Close").iloc[i]), 4)
                 ohlcv.append({
                     "time":   t,
                     "open":   o,
-                    "high":   round(float(_col(df_d, "High").iloc[i]), 4),
-                    "low":    round(float(_col(df_d, "Low").iloc[i]),  4),
+                    "high":   round(float(_col(df_6m, "High").iloc[i]), 4),
+                    "low":    round(float(_col(df_6m, "Low").iloc[i]),  4),
                     "close":  c,
                     "volume": int(float(vol_s.iloc[i])),
                     "up":     c >= o,
                 })
+                v50 = ma50_6m.iloc[i]
+                if not pd.isna(v50):
+                    ma50_data.append({"time": t, "value": round(float(v50), 4)})
+                v200 = ma200_6m.iloc[i]
+                if not pd.isna(v200):
+                    ma200_data.append({"time": t, "value": round(float(v200), 4)})
             except Exception:
                 pass
+
+        # Zones S/R (calculées ici pour réutilisation dans build_card)
+        sr_zones = detect_sr_zones(ohlcv, prix)
+        nearest_sup = next((z for z in sorted(sr_zones, key=lambda z: z["price"], reverse=True) if z["price"] < prix), None)
+        nearest_res = next((z for z in sorted(sr_zones, key=lambda z: z["price"]) if z["price"] > prix), None)
+
+        # Prix intraday : fast_info > Tradegate > yfinance 2m
+        prix_source  = "yahoo"
+        prix_close_d = prix
+
+        def _update_prix(new_prix, source):
+            nonlocal prix, variation, prix_source
+            if not new_prix: return
+            diff = abs(new_prix - prix_close_d) / prix_close_d
+            if diff >= 0.15: return          # aberrant, ignorer
+            prix        = new_prix
+            prix_source = source
+            # Variation intraday seulement si le prix RT est vraiment différent (>0.01%)
+            if diff > 0.0001:
+                variation = round((new_prix / prix_close_d - 1) * 100, 2)
+            # sinon on garde la variation J-2→J-1 déjà calculée
+
+        # 1. ticker_rt dédié (ex: GOLD-EUR.PA) si défini
+        if ticker_rt:
+            try:
+                import warnings, logging
+                logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    fi_rt = yf.Ticker(ticker_rt).fast_info
+                    if fi_rt.last_price:
+                        _update_prix(round(float(fi_rt.last_price), 4), "realtime")
+            except Exception:
+                pass
+            finally:
+                logging.getLogger("yfinance").setLevel(logging.WARNING)
+
+        # 2. yfinance fast_info sur le ticker principal
+        if prix_source == "yahoo":
+            try:
+                import warnings, logging
+                logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    fi = tk.fast_info
+                    if fi.last_price:
+                        _update_prix(round(float(fi.last_price), 4), "realtime")
+            except Exception:
+                pass
+            finally:
+                logging.getLogger("yfinance").setLevel(logging.WARNING)
+
+        # 2. Tradegate (si fast_info absent, pour ETPs IE/JE)
+        if prix_source == "yahoo" and isin_fallback:
+            _update_prix(fetch_tradegate_price(isin_fallback), "tradegate")
+
+        # 3. yfinance intraday 2m (dernier recours)
+        if prix_source == "yahoo":
+            try:
+                df_rt = tk.history(period="1d", interval="2m")
+                if not df_rt.empty:
+                    _update_prix(round(float(_close(df_rt).iloc[-1]), 4), "yahoo_rt")
+            except Exception:
+                pass
+
+        if prix_source != "yahoo":
+            print(f"  [{prix_source.upper()}] {ticker} intraday: {prix}")
+
         return {
-            "ok": True, "prix": prix, "variation": variation,
+            "ok": True, "prix": prix, "variation": variation, "prix_source": prix_source,
             "swing": {"high": round(high_6m, 4), "low": round(low_6m, 4)},
             "fibo_auto": fibo_auto,
             "ohlcv": ohlcv,
+            "ma50":  ma50_val, "ma200": ma200_val, "ma_cross": ma_cross,
+            "ma50_series": ma50_data, "ma200_series": ma200_data,
+            "sr_zones": sr_zones,
+            "nearest_sup": nearest_sup, "nearest_res": nearest_res,
             "daily": {
                 "rsi":       round(float(df_d["RSI"].iloc[-1]), 1),
                 "hist":      round(float(df_d["Hist"].iloc[-1]), 4),
@@ -194,6 +293,9 @@ def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None):
         _empty = {"rsi": None, "hist": None, "crossover": "neutral"}
         return {"ok": False, "prix": None, "variation": None,
                 "swing": {"high": None, "low": None}, "fibo_auto": {}, "ohlcv": [],
+                "ma50": None, "ma200": None, "ma_cross": None,
+                "ma50_series": [], "ma200_series": [], "sr_zones": [],
+                "nearest_sup": None, "nearest_res": None,
                 "daily": _empty.copy(), "weekly": _empty.copy()}
 
 # ── ZONES SUPPORT / RÉSISTANCE ────────────────────────────────────────────────
@@ -292,6 +394,83 @@ def evaluate_signal(key, cfg, d):
                     "action": "Croisement MACD daily baissier — ne pas entrer"}
         return {"label": "ATTENTE SIGNAL", "color": "yellow",
                 "action": "Surveiller croisement MACD daily haussier"}
+
+    if key == "GOLD":
+        z_high, z382, z50, z618 = cfg["fibo_zones"][0], cfg["fibo_zones"][1], cfg["fibo_zones"][2], cfg["fibo_zones"][3]
+        ma_cross = d.get("ma_cross")
+        # Surachat weekly : alerte correction
+        if cw in ["bearish_cross", "bearish"] and rsi_w and rsi_w > 70:
+            return {"label": "CORRECTION EN COURS", "color": "orange",
+                    "action": "RSI weekly " + str(rsi_w) + " surachat — attendre zone 38.2% (" + str(z382) + "€)"}
+        # Golden cross + MACD haussier : tendance forte
+        if ma_cross == "golden" and cd in ["bullish", "bullish_cross"] and cw in ["bullish", "bullish_cross"]:
+            return {"label": "TENDANCE HAUSSIERE", "color": "green",
+                    "action": "Golden cross + MACD D/W haussiers — conserver, surveiller RSI weekly"}
+        # MACD daily haussier en zone fibo → signal d'achat
+        if cd in ["bullish", "bullish_cross"] and p and p <= z382:
+            return {"label": "ZONE D'ACHAT", "color": "green",
+                    "action": "MACD daily haussier + Fibo 38.2% (" + str(z382) + "€) — ENTRER"}
+        if cd in ["bullish", "bullish_cross"] and p and p <= z50:
+            return {"label": "ZONE FIBO 50%", "color": "teal",
+                    "action": "MACD daily haussier + Fibo 50% (" + str(z50) + "€) — renforcer"}
+        if cd in ["bullish", "bullish_cross"] and p and p <= z618:
+            return {"label": "ZONE FIBO 61.8%", "color": "teal",
+                    "action": "Zone doree (" + str(z618) + "€) — surveiller confirmation weekly"}
+        # Prix en zone fibo sans MACD haussier → attendre confirmation
+        if p and p <= z618:
+            return {"label": "ZONE 61.8% ATTEINTE", "color": "teal",
+                    "action": "Zone doree (" + str(z618) + "€) — attendre croisement MACD daily"}
+        if p and p <= z50:
+            return {"label": "ZONE 50% ATTEINTE", "color": "yellow",
+                    "action": "Fibo 50% (" + str(z50) + "€) — surveiller croisement MACD daily"}
+        if p and p <= z382:
+            return {"label": "ZONE 38.2% ATTEINTE", "color": "yellow",
+                    "action": "Fibo 38.2% (" + str(z382) + "€) — surveiller croisement MACD daily"}
+        # Death cross : prudence
+        if ma_cross == "death":
+            return {"label": "DEATH CROSS", "color": "red",
+                    "action": "MA50 sous MA200 — ne pas renforcer, attendre retournement"}
+        if cd == "bearish_cross":
+            return {"label": "CROISEMENT BAISSIER", "color": "orange",
+                    "action": "MACD daily croise baissier — allegier ou attendre repli vers Fibo"}
+        return {"label": "EN ATTENTE", "color": "yellow",
+                "action": "Attendre repli vers Fibo 38.2% (" + str(z382) + "€) — actuel: " + (str(round(p, 2)) if p else "—") + "€"}
+
+    if key == "PHAG":
+        z_high, z382, z50, z618 = cfg["fibo_zones"][0], cfg["fibo_zones"][1], cfg["fibo_zones"][2], cfg["fibo_zones"][3]
+        ma_cross = d.get("ma_cross")
+        # Signal d'achat : MACD haussier en zone fibo
+        if cd in ["bullish_cross", "bullish"] and p and p <= z382:
+            return {"label": "SIGNAL ACTIF", "color": "green",
+                    "action": "MACD daily haussier + Fibo 38.2% (" + str(z382) + "€) — ENTRER"}
+        if cd in ["bullish_cross", "bullish"] and p and p <= z50:
+            return {"label": "ZONE FIBO 50%", "color": "teal",
+                    "action": "MACD daily haussier + Fibo 50% (" + str(z50) + "€) — renforcer"}
+        if cd in ["bullish_cross", "bullish"] and p and p <= z618:
+            return {"label": "ZONE FIBO 61.8%", "color": "teal",
+                    "action": "Zone dorée (" + str(z618) + "€) — signal fort, confirmer weekly"}
+        if cd in ["bullish_cross", "bullish"]:
+            return {"label": "MACD HAUSSIER", "color": "teal",
+                    "action": "MACD daily haussier mais prix haut — attendre repli vers Fibo 38.2% (" + str(z382) + "€)"}
+        # Prix en zone fibo sans MACD haussier → attendre confirmation
+        if p and p <= z618:
+            return {"label": "ZONE 61.8% ATTEINTE", "color": "teal",
+                    "action": "Zone doree (" + str(z618) + "€) — attendre croisement MACD daily"}
+        if p and p <= z50:
+            return {"label": "ZONE 50% ATTEINTE", "color": "yellow",
+                    "action": "Fibo 50% (" + str(z50) + "€) — surveiller croisement MACD daily"}
+        if p and p <= z382:
+            return {"label": "ZONE 38.2% ATTEINTE", "color": "yellow",
+                    "action": "Fibo 38.2% (" + str(z382) + "€) — surveiller croisement MACD daily"}
+        # Correction / danger
+        if ma_cross == "death":
+            return {"label": "DEATH CROSS", "color": "red",
+                    "action": "MA50 sous MA200 — ne pas entrer, attendre retournement"}
+        if cd == "bearish_cross":
+            return {"label": "CROISEMENT BAISSIER", "color": "red",
+                    "action": "MACD daily croise baissier — ne pas entrer"}
+        return {"label": "ATTENTE SIGNAL", "color": "yellow",
+                "action": "Surveiller croisement MACD daily haussier + Fibo 38.2% (" + str(z382) + "€)"}
 
     if key == "BTC":
         if cw in ["bullish","bullish_cross"] and cd in ["bullish","bullish_cross"]:
@@ -403,6 +582,18 @@ def fibo_alert(prix, fibo_auto, static_zones, devise, swing):
                 break
     return out
 
+def _ma_cls(prix, ma_val):
+    """Classe CSS selon prix au-dessus / en-dessous de la MA."""
+    if prix is None or ma_val is None: return "neutral"
+    return "bullish" if prix > ma_val else "bearish"
+
+def _sr_row(zone, devise):
+    """Ligne texte pour une zone S/R."""
+    if zone is None: return "—"
+    sym = "▲" if zone["type"] == "resistance" else ("▼" if zone["type"] == "support" else "◆")
+    strength_map = {"strong": "●●●", "medium": "●●○", "weak": "●○○"}
+    return sym + " " + _fmt_level(zone["price"], devise) + " " + strength_map.get(zone["strength"], "")
+
 def build_card(key, cfg, d, sig):
     prix_val  = d["prix"]      if d else None
     var_val   = d["variation"] if d else None
@@ -412,16 +603,28 @@ def build_card(key, cfg, d, sig):
     cw        = d["weekly"]["crossover"] if d else "neutral"
     fa        = d.get("fibo_auto", {})  if d else {}
     swing     = d.get("swing")          if d else None
-    var_str   = ("+" if var_val and var_val > 0 else "") + (str(var_val) + "%" if var_val is not None else "—")
-    var_cls   = "up" if var_val and var_val > 0 else ("down" if var_val and var_val < 0 else "flat")
-    color     = sig["color"]
+    ma50      = d.get("ma50")           if d else None
+    ma200     = d.get("ma200")          if d else None
+    ma_cross  = d.get("ma_cross")       if d else None
+    n_sup     = d.get("nearest_sup")    if d else None
+    n_res     = d.get("nearest_res")    if d else None
+    var_str      = ("+" if var_val and var_val > 0 else "") + (str(var_val) + "%" if var_val is not None else "—")
+    var_cls      = "up" if var_val and var_val > 0 else ("down" if var_val and var_val < 0 else "flat")
+    prix_source  = d.get("prix_source", "yahoo") if d else "yahoo"
+    _src_labels  = {"realtime": "RT", "tradegate": "TG", "yahoo_rt": "~RT"}
+    source_badge = ("<span class='source-tg'>" + _src_labels[prix_source] + "</span>") if prix_source in _src_labels else ""
+    color        = sig["color"]
+
+    # MA cross label + couleur
+    cross_label = "GOLDEN ✦" if ma_cross == "golden" else ("DEATH ✕" if ma_cross == "death" else "—")
+    cross_cls   = "bullish" if ma_cross == "golden" else ("bearish" if ma_cross == "death" else "neutral")
 
     return (
         "<div class='asset-card " + color + "'>"
         + "<div class='card-top'>"
         + "<div>" + h("div","asset-name",cfg["nom"]) + h("div","asset-ticker",cfg["ticker"]) + "</div>"
         + "<div class='price-block'>"
-        + h("div","price-value", cfg["devise"] + fmt_price(prix_val, cfg["devise"]))
+        + h("div","price-value", cfg["devise"] + fmt_price(prix_val, cfg["devise"]) + source_badge)
         + h("div","price-change " + var_cls, var_str)
         + "</div></div>"
         + h("div","signal-badge badge-" + color, sig["label"])
@@ -431,6 +634,13 @@ def build_card(key, cfg, d, sig):
         + "<div class='ind-block'>" + h("div","ind-label","MACD D")      + h("div","ind-value "+mc(cd), ml(cd)) + "</div>"
         + "<div class='ind-block'>" + h("div","ind-label","RSI Weekly")  + h("div","ind-value "+rc(rsi_w), str(round(rsi_w)) if rsi_w else "—") + "</div>"
         + "<div class='ind-block'>" + h("div","ind-label","MACD W")      + h("div","ind-value "+mc(cw), ml(cw)) + "</div>"
+        + "</div>"
+        + "<div class='indicators ma-row'>"
+        + "<div class='ind-block'>" + h("div","ind-label","MA 50")    + h("div","ind-value "+_ma_cls(prix_val,ma50),  _fmt_level(ma50,  cfg["devise"]) if ma50  else "—") + "</div>"
+        + "<div class='ind-block'>" + h("div","ind-label","MA 200")   + h("div","ind-value "+_ma_cls(prix_val,ma200), _fmt_level(ma200, cfg["devise"]) if ma200 else "—") + "</div>"
+        + "<div class='ind-block'>" + h("div","ind-label","MA Cross") + h("div","ind-value "+cross_cls, cross_label) + "</div>"
+        + "<div class='ind-block'>" + h("div","ind-label","Support")     + h("div","ind-value sr-sup",  _sr_row(n_sup, cfg["devise"])) + "</div>"
+        + "<div class='ind-block'>" + h("div","ind-label","Résistance")  + h("div","ind-value sr-res",  _sr_row(n_res, cfg["devise"])) + "</div>"
         + "</div>"
         + "<div class='fibo-zones'>" + fibo_pills(prix_val, cfg["fibo_zones"], cfg["devise"]) + "</div>"
         + fibo_auto_pills(prix_val, fa, cfg["devise"])
@@ -525,6 +735,10 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 .ind-value.neutral{color:var(--text-dim)}
 .ind-value.overbought{color:var(--orange)}
 .ind-value.oversold{color:var(--teal)}
+.source-tg{font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:rgba(38,198,218,.15);border:1px solid rgba(38,198,218,.4);color:var(--teal);margin-left:5px;vertical-align:middle;letter-spacing:.5px}
+.ma-row{margin-top:6px;padding-top:6px;border-top:1px dashed var(--border);grid-template-columns:1fr 1fr 1fr 1fr 1fr}
+.ind-value.sr-sup{color:var(--green);font-size:10px}
+.ind-value.sr-res{color:var(--red);font-size:10px}
 .fibo-zones{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap}
 .fibo-pill{font-size:10px;padding:2px 7px;border-radius:3px;background:var(--bg3);border:1px solid var(--border);color:var(--text-dim)}
 .fibo-pill.active{background:rgba(61,122,237,.12);border-color:rgba(61,122,237,.4);color:#7ab4ff}
@@ -635,7 +849,7 @@ def build_html(now, cards_by_cat, conds, errors, charts_json="{}"):
 
         + conditions_bar + scenarios + err_html + cards_html
 
-        + "<div class='footer'>Donnees : Yahoo Finance · MACD(12,26,9) + RSI(14) · Niveaux Fibonacci"
+        + "<div class='footer'>Donnees : Yahoo Finance · MACD(12,26,9) · RSI(14) · Fibonacci · MA50/MA200 · Support/Résistance"
         + "<br>Analyse personnelle — Pas un conseil financier · Relancer le script pour actualiser</div>"
         + "</div>"
         + "<script src='https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js'></script>"
@@ -683,6 +897,16 @@ document.addEventListener('DOMContentLoaded',function(){
         title:z.strength==='strong'?'● '+z.type.toUpperCase():'○',
       });
     }
+    // MA50 (or)
+    if(d.ma50_series&&d.ma50_series.length){
+      const ma50=chart.addLineSeries({color:'#ffd54f',lineWidth:1,priceLineVisible:false,lastValueVisible:true,title:'MA50'});
+      ma50.setData(d.ma50_series);
+    }
+    // MA200 (orange)
+    if(d.ma200_series&&d.ma200_series.length){
+      const ma200=chart.addLineSeries({color:'#ff7043',lineWidth:1,priceLineVisible:false,lastValueVisible:true,title:'MA200'});
+      ma200.setData(d.ma200_series);
+    }
     // Prix actuel
     if(d.prix) candles.createPriceLine({
       price:d.prix,color:'#ffd54f',lineWidth:1,
@@ -703,7 +927,7 @@ document.addEventListener('DOMContentLoaded',function(){
 def generate_dashboard():
     now = datetime.now()
     print("\n" + "="*55)
-    print("  PORTFOLIO SIGNAL DASHBOARD — " + now.strftime("%d/%m/%Y %H:%M"))
+    print("  PORTFOLIO SIGNAL DASHBOARD - " + now.strftime("%d/%m/%Y %H:%M"))
     print("="*55 + "\n")
 
     all_data, errors = {}, []
@@ -713,6 +937,7 @@ def generate_dashboard():
             cfg["ticker"],
             isin_fallback=cfg.get("isin"),
             ticker_fallback=cfg.get("ticker_fallback"),
+            ticker_rt=cfg.get("ticker_rt"),
         )
         all_data[key] = d
         if d and not d.get("ok"):
@@ -762,10 +987,12 @@ def generate_dashboard():
         if not d or not d.get("ok") or not d.get("ohlcv"):
             continue
         charts_data[key] = {
-            "prix":      d["prix"],
-            "ohlcv":     d["ohlcv"],
-            "fibo_auto": {str(r): v for r, v in d.get("fibo_auto", {}).items()},
-            "zones":     detect_sr_zones(d["ohlcv"], d["prix"]),
+            "prix":        d["prix"],
+            "ohlcv":       d["ohlcv"],
+            "fibo_auto":   {str(r): v for r, v in d.get("fibo_auto", {}).items()},
+            "zones":       d.get("sr_zones", []),
+            "ma50_series":  d.get("ma50_series",  []),
+            "ma200_series": d.get("ma200_series", []),
         }
     charts_json = _json.dumps(charts_data, ensure_ascii=False)
 
@@ -778,7 +1005,7 @@ def generate_dashboard():
     print("\n  Signaux actifs :")
     for key, sig in signals.items():
         if sig["color"] in ["green", "teal"]:
-            print("    [OK] " + key + " — " + sig["label"])
+            print("    [OK] " + key + " - " + sig["label"])
     print()
     if not os.environ.get("CI"):
         webbrowser.open("file://" + out)
@@ -793,7 +1020,7 @@ def generate_claude_summary():
     """
     now = datetime.now()
     print("\n" + "="*55)
-    print("  GENERATION RESUME CLAUDE — " + now.strftime("%d/%m/%Y %H:%M"))
+    print("  GENERATION RESUME CLAUDE - " + now.strftime("%d/%m/%Y %H:%M"))
     print("="*55 + "\n")
 
     all_data = {}
@@ -832,15 +1059,42 @@ def generate_claude_summary():
     }
 
     for key in ASSETS:
+        d   = all_data.get(key)
+        ok    = d and d.get("ok")
+        ma50  = round(d["ma50"],  2) if ok and d.get("ma50")  else None
+        ma200 = round(d["ma200"], 2) if ok and d.get("ma200") else None
+        n_sup = d.get("nearest_sup") if d else None
+        n_res = d.get("nearest_res") if d else None
+        # Zones S/R complètes (jusqu'à 5 niveaux triés par force)
+        sr_zones = d.get("sr_zones", []) if d else []
+        sr_detail = [
+            {
+                "prix":     round(z["price"], 4),
+                "type":     z["type"],
+                "force":    z["strength"],
+                "touches":  z["touches"],
+                "position": "below" if z["price"] < (d["prix"] or 0) else "above",
+            }
+            for z in sorted(sr_zones, key=lambda z: z["touches"], reverse=True)[:5]
+        ]
         snapshot["assets"][key] = {
-            "prix":    px(key, 4 if key == "EURUSD" else 2),
-            "var_pct": vr(key),
-            "rsi_d":   g(key, "rsi",       "daily"),
-            "rsi_w":   g(key, "rsi",       "weekly"),
-            "macd_d":  g(key, "crossover", "daily",  0),
-            "macd_w":  g(key, "crossover", "weekly", 0),
-            "signal":  signals[key]["label"],
-            "color":   signals[key]["color"],
+            "prix":       px(key, 4 if key == "EURUSD" else 2),
+            "prix_source": d.get("prix_source", "yahoo") if ok else None,
+            "var_pct":    vr(key),
+            "rsi_d":      g(key, "rsi",       "daily"),
+            "rsi_w":      g(key, "rsi",       "weekly"),
+            "macd_d":     g(key, "crossover", "daily",  0),
+            "macd_w":     g(key, "crossover", "weekly", 0),
+            "ma50":       ma50,
+            "ma200":      ma200,
+            "ma_cross":   d.get("ma_cross") if ok else None,
+            "prix_vs_ma50":  ("above" if ok and d["prix"] and ma50 and d["prix"] > ma50 else "below") if ma50 else None,
+            "prix_vs_ma200": ("above" if ok and d["prix"] and ma200 and d["prix"] > ma200 else "below") if ma200 else None,
+            "support":    {"prix": round(n_sup["price"], 4), "force": n_sup["strength"], "touches": n_sup["touches"]} if n_sup else None,
+            "resistance": {"prix": round(n_res["price"], 4), "force": n_res["strength"], "touches": n_res["touches"]} if n_res else None,
+            "zones_sr":   sr_detail,
+            "signal":     signals[key]["label"],
+            "color":      signals[key]["color"],
         }
 
     # Triggers globaux
@@ -887,7 +1141,7 @@ def generate_claude_summary():
     summary_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "claude_update.txt")
     with open(summary_path, "w", encoding="utf-8") as f:
         f.write(bloc)
-    print("  Fichier sauvegardé : " + summary_path + "\n")
+    print("  Fichier sauvegarde : " + summary_path + "\n")
 
     return snapshot
 
