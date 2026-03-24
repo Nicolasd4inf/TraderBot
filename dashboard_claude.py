@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
 """
-Portfolio Signal Dashboard Generator
-=====================================
-Génère un dashboard HTML avec les signaux techniques de tous les actifs du portefeuille.
+Portfolio Signal Dashboard Generator — CTO
+============================================
+Génère un dashboard HTML avec les signaux techniques de tous les actifs du portefeuille CTO.
 
 Installation :
     pip install yfinance pandas numpy
 
 Usage :
-    python dashboard_generator.py
+    python dashboard_claude.py
     -> Ouvre automatiquement dashboard.html dans le navigateur
 
 Planification automatique :
     Windows : Planificateur de taches -> executer chaque matin a 9h
-    Mac/Linux : crontab -e -> 0 9 * * 1-5 python /chemin/dashboard_generator.py
+    Mac/Linux : crontab -e -> 0 9 * * 1-5 python /chemin/dashboard_claude.py
 """
 
+import json
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -26,30 +27,29 @@ from datetime import datetime
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 
-ASSETS = {
-    "PPFB":  {"ticker": "PPFB.PA",  "nom": "Or — iShares Physical Gold",   "categorie": "metaux",  "devise": "€", "fibo_zones": [87.86, 77.81, 74.71, 71.61],    "stop": 62,  "ticker_fallback": "PPFB.DE", "isin": "IE00B4ND3602", "euronext_mic": "XPAR"},
-    "GOLD":  {"ticker": "GOLD.PA",  "nom": "Or — Amundi Physical Gold",    "categorie": "metaux",  "devise": "€", "fibo_zones": [179.76, 159.13, 152.75, 146.38], "stop": 125, "isin": "FR0013416716",  "euronext_mic": "XPAR", "ticker_rt": "GOLD-EUR.PA"},
-    "XAD6":  {"ticker": "XAD6.DE",  "nom": "Argent — Xtrackers Silver",    "categorie": "metaux",  "devise": "€", "fibo_zones": [893.50, 685.49, 621.23, 556.97], "stop": 349, "isin": "DE000A0S9GB0"},
-    "PHAG":  {"ticker": "PHAG.AS",  "nom": "Argent — WisdomTree Physical", "categorie": "metaux",  "devise": "€", "fibo_zones": [86.91, 60.91, 52.88, 44.85],    "stop": 18,  "isin": "JE00B1VS3333",  "euronext_mic": "XAMS"},
-    "BTC":   {"ticker": "BTC-USD",  "nom": "Bitcoin",                       "categorie": "crypto",  "devise": "$", "fibo_zones": [124753, 101049, 93727, 86405],   "stop": 62700},
-    "EURUSD":{"ticker": "EURUSD=X", "nom": "EUR/USD",                       "categorie": "macro",   "devise": "",  "fibo_zones": [1.2018, 1.1795, 1.1726, 1.1658], "stop": None},
-    "BRENT": {"ticker": "BZ=F",     "nom": "Brent Crude",                   "categorie": "macro",   "devise": "$", "fibo_zones": [108.65, 89.65, 83.79, 77.92],   "stop": None},
-    "PUST":  {"ticker": "PUST.PA",  "nom": "Nasdaq 100 — Amundi PEA",      "categorie": "actions", "devise": "€", "fibo_zones": [90.28, 87.63, 86.81, 85.98],    "stop": 61,  "isin": "FR0013412285",  "euronext_mic": "XPAR"},
-    "PSP5":  {"ticker": "PSP5.PA",  "nom": "S&P 500 — Amundi PEA",         "categorie": "actions", "devise": "€", "fibo_zones": [52.51, 51.33, 50.96, 50.60],    "stop": 39,  "isin": "FR0013412020",  "euronext_mic": "XPAR"},
-    "PTPXE": {"ticker": "PTPXE.PA", "nom": "Japon TOPIX — Amundi PEA",     "categorie": "actions", "devise": "€", "fibo_zones": [36.80, 34.39, 33.65, 32.91],    "stop": 20,  "isin": "FR0013407236",  "euronext_mic": "XPAR"},
-    "PAASI": {"ticker": "PAASI.PA", "nom": "Asia Emergente — Amundi PEA",  "categorie": "actions", "devise": "€", "fibo_zones": [35.04, 32.53, 31.76, 30.98],    "stop": 18,  "isin": "FR0011440478",  "euronext_mic": "XPAR"},
+TICKER_MAP = {
+    "GOLD":  {"primary": "GOLD.PA",  "fallbacks": ["GLDA.PA"],          "nom": "Or — Amundi Physical Gold",      "categorie": "metaux",  "devise": "€", "isin": "FR0013416716"},
+    "PHAG":  {"primary": "PHAG.AS",  "fallbacks": ["PHAG.L"],            "nom": "Argent — WisdomTree Physical",   "categorie": "metaux",  "devise": "€", "isin": "JE00B1VS3333"},
+    "BTC":   {"primary": "BTC-USD",  "fallbacks": ["BTC-EUR"],           "nom": "Bitcoin",                        "categorie": "crypto",  "devise": "$"},
+    "EQQQ":  {"primary": "EQQQ.PA",  "fallbacks": ["EQQQ.AS","EQQQ.L"], "nom": "Nasdaq-100 — Invesco",           "categorie": "actions", "devise": "€"},
+    "VUSA":  {"primary": "VUSA.AS",  "fallbacks": ["VUSA.L"],            "nom": "S&P 500 — Vanguard",             "categorie": "actions", "devise": "€"},
+    "IJPA":  {"primary": "IJPA.AS",  "fallbacks": ["SJPA.AS","IJPA.L"], "nom": "MSCI Japan — iShares",           "categorie": "actions", "devise": "€"},
+    "PAASI": {"primary": "PAASI.PA", "fallbacks": [],                    "nom": "MSCI EM Asia — Amundi",          "categorie": "actions", "devise": "€"},
+    "EMIM":  {"primary": "EMIM.AS",  "fallbacks": ["EIMI.AS","EMIM.L"], "nom": "MSCI EM IMI — iShares",          "categorie": "actions", "devise": "€"},
+    "ETZ":   {"primary": "ETZ.PA",   "fallbacks": [],                    "nom": "STOXX Europe 600 — BNP",         "categorie": "actions", "devise": "€"},
+    "VHYL":  {"primary": "VHYL.AS",  "fallbacks": ["VHYL.L"],           "nom": "All-World High Div — Vanguard",  "categorie": "actions", "devise": "€"},
+}
+ASSETS = TICKER_MAP  # alias for backward compat
+
+ASSET_CATEGORY = {k: v["categorie"] for k, v in TICKER_MAP.items()}
+
+EXIT_RSI_THRESHOLDS = {
+    "metaux":  {"sell_50": 78, "sell_100": 85, "rebuy": 50},
+    "crypto":  {"sell_50": 80, "sell_100": 88, "rebuy": 45},
+    "actions": {"sell_50": 75, "sell_100": 82, "rebuy": 55},
 }
 
-TRIGGERS = {
-    "eurusd_seuil":    1.15,
-    "brent_actions":  90.0,
-    "brent_japon":    85.0,
-    "brent_critique": 110.0,
-    "ppfb_zone1":     84.0,
-    "xad6_zone1":     660.0,
-    "btc_fibo50":     70750.0,
-    "btc_fibo618":    57800.0,
-}
+ETF_KEYS = ["EQQQ", "VUSA", "IJPA", "PAASI", "EMIM", "ETZ", "VHYL"]
 
 # ── CALCULS TECHNIQUES ────────────────────────────────────────────────────────
 
@@ -95,11 +95,11 @@ def fetch_tradegate_price(isin):
             "X-Requested-With": "XMLHttpRequest",
         })
         # 1. Visite la page principale pour obtenir les cookies de session
-        base_url = f"https://www.tradegate.de/orderbuch.php?isin={isin}"
+        base_url = "https://www.tradegate.de/orderbuch.php?isin=" + isin
         session.get(base_url, timeout=10)
         # 2. Appel de l'API JSON avec Referer
         session.headers["Referer"] = base_url
-        r = session.get(f"https://www.tradegate.de/json/?isin={isin}", timeout=10)
+        r = session.get("https://www.tradegate.de/json/?isin=" + isin, timeout=10)
         r.raise_for_status()
         data = r.json()
         # Champs possibles selon la réponse Tradegate
@@ -111,31 +111,95 @@ def fetch_tradegate_price(isin):
                     val = val.replace(".", "").replace(",", ".")
                 return round(float(val), 4)
     except Exception as e:
-        print(f"  [ERR Tradegate] {isin}: {e}")
+        print("  [ERR Tradegate] " + isin + ": " + str(e))
     return None
 
 
-def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None, ticker_rt=None):
+# ── FIBONACCI DYNAMIQUE ───────────────────────────────────────────────────────
+
+def calculate_fibonacci_levels(df, lookback_period=252):
+    def _c(col):
+        c = df[col]
+        return c.iloc[:, 0] if hasattr(c, "columns") else c
+    high_col = _c("High")
+    low_col  = _c("Low")
+    ath_price = float(high_col.max())
+    ath_idx   = high_col.idxmax()
+    post_mask = df.index > ath_idx
+    post_low  = low_col[post_mask]
+    if len(post_low) > 5:
+        swing_low     = float(post_low.min())
+        swing_low_idx = post_low.idxmin()
+    else:
+        recent        = low_col.iloc[-lookback_period:]
+        swing_low     = float(recent.min())
+        swing_low_idx = recent.idxmin()
+    diff = ath_price - swing_low
+    def _d(v): return str(v.date()) if hasattr(v, "date") else str(v)[:10]
+    return {
+        "ath":       {"price": round(ath_price, 4), "date": _d(ath_idx)},
+        "swing_low": {"price": round(swing_low, 4), "date": _d(swing_low_idx)},
+        "fib_0":   round(swing_low, 4),
+        "fib_236": round(swing_low + diff * 0.236, 4),
+        "fib_382": round(swing_low + diff * 0.382, 4),
+        "fib_500": round(swing_low + diff * 0.500, 4),
+        "fib_618": round(swing_low + diff * 0.618, 4),
+        "fib_786": round(swing_low + diff * 0.786, 4),
+        "fib_100": round(ath_price, 4),
+    }
+
+def get_current_fib_zone(price, fib):
+    zones = [
+        ("BELOW_FIB_0",  -1e9,          fib["fib_0"]),
+        ("ZONE_0_236",   fib["fib_0"],   fib["fib_236"]),
+        ("ZONE_236_382", fib["fib_236"], fib["fib_382"]),
+        ("ZONE_382_500", fib["fib_382"], fib["fib_500"]),
+        ("ZONE_500_618", fib["fib_500"], fib["fib_618"]),
+        ("ZONE_618_786", fib["fib_618"], fib["fib_786"]),
+        ("ZONE_786_100", fib["fib_786"], fib["fib_100"]),
+        ("ABOVE_ATH",    fib["fib_100"], 1e9),
+    ]
+    for name, lo, hi in zones:
+        if lo <= price < hi:
+            return name
+    return "UNKNOWN"
+
+
+# ── FETCH ASSET ───────────────────────────────────────────────────────────────
+
+def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None, ticker_rt=None, fallbacks=None):
     try:
-        tk   = yf.Ticker(ticker)
-        df_d = tk.history(period="1y",   interval="1d")   # 1 an pour MA200
-        df_w = tk.history(period="2y",   interval="1wk")
-        # Fallback ticker Yahoo Finance si données vides
-        if df_d.empty and ticker_fallback:
-            print(f"  [INFO] {ticker} vide -> essai {ticker_fallback}")
-            tk   = yf.Ticker(ticker_fallback)
-            df_d = tk.history(period="1y",  interval="1d")
-            df_w = tk.history(period="2y",  interval="1wk")
-        if df_d.empty:
+        # Try all fallback tickers
+        all_tickers = [ticker] + ([ticker_fallback] if ticker_fallback else []) + (fallbacks or [])
+        tk   = None
+        df_d = None
+        df_w = None
+        used_ticker = ticker
+        for t in all_tickers:
+            tk_try   = yf.Ticker(t)
+            df_d_try = tk_try.history(period="2y", interval="1d")
+            df_w_try = tk_try.history(period="5y", interval="1wk")
+            if not df_d_try.empty:
+                tk         = tk_try
+                df_d       = df_d_try
+                df_w       = df_w_try
+                used_ticker = t
+                if t != ticker:
+                    print("  [INFO] " + ticker + " vide -> essai " + t)
+                break
+
+        if df_d is None or df_d.empty:
             # Dernier recours : prix Tradegate uniquement (pas d'indicateurs)
             if isin_fallback:
-                print(f"  [INFO] {ticker} -> tentative prix Tradegate ({isin_fallback})")
+                print("  [INFO] " + ticker + " -> tentative prix Tradegate (" + isin_fallback + ")")
                 prix_tg = fetch_tradegate_price(isin_fallback)
                 if prix_tg:
                     _empty = {"rsi": None, "hist": None, "crossover": "neutral"}
                     return {"ok": True, "prix": prix_tg, "variation": None,
-                            "source": "tradegate", "daily": _empty.copy(), "weekly": _empty.copy()}
+                            "source": "tradegate", "daily": _empty.copy(), "weekly": _empty.copy(),
+                            "fibonacci": {}}
             return None
+
         # Compatibilité yfinance 0.2.x (colonnes MultiIndex → aplatir)
         def _close(df):
             c = df["Close"]
@@ -143,7 +207,7 @@ def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None, ticker_rt=None
         close_d = _close(df_d)
         close_w = _close(df_w) if not df_w.empty else None
 
-        # MA50 / MA200 sur la série complète 1 an
+        # MA50 / MA200 sur la série complète 2 ans
         ma50_s  = close_d.rolling(50).mean()
         ma200_s = close_d.rolling(200).mean()
         ma50_val  = round(float(ma50_s.iloc[-1]),  4) if not pd.isna(ma50_s.iloc[-1])  else None
@@ -169,6 +233,14 @@ def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None, ticker_rt=None
         high_6m = float(_col(df_6m, "High").max())
         low_6m  = float(_col(df_6m, "Low").min())
         fibo_auto = {r: round(high_6m - (high_6m - low_6m) * r, 4) for r in [0.236, 0.382, 0.500, 0.618, 0.786]}
+
+        # Fibonacci dynamique (2 ans d'historique)
+        try:
+            fib_levels = calculate_fibonacci_levels(df_d)
+            fib_levels["current_zone"] = get_current_fib_zone(prix, fib_levels)
+        except Exception as e:
+            print("  [WARN Fib] " + ticker + ": " + str(e))
+            fib_levels = {}
 
         # OHLCV pour le chart (6 derniers mois) + séries MA alignées
         ohlcv      = []
@@ -252,11 +324,11 @@ def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None, ticker_rt=None
             finally:
                 logging.getLogger("yfinance").setLevel(logging.WARNING)
 
-        # 2. Tradegate (si fast_info absent, pour ETPs IE/JE)
+        # 3. Tradegate (si fast_info absent, pour ETPs IE/JE)
         if prix_source == "yahoo" and isin_fallback:
             _update_prix(fetch_tradegate_price(isin_fallback), "tradegate")
 
-        # 3. yfinance intraday 2m (dernier recours)
+        # 4. yfinance intraday 2m (dernier recours)
         if prix_source == "yahoo":
             try:
                 df_rt = tk.history(period="1d", interval="2m")
@@ -266,12 +338,13 @@ def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None, ticker_rt=None
                 pass
 
         if prix_source != "yahoo":
-            print(f"  [{prix_source.upper()}] {ticker} intraday: {prix}")
+            print("  [" + prix_source.upper() + "] " + ticker + " intraday: " + str(prix))
 
         return {
             "ok": True, "prix": prix, "variation": variation, "prix_source": prix_source,
             "swing": {"high": round(high_6m, 4), "low": round(low_6m, 4)},
             "fibo_auto": fibo_auto,
+            "fibonacci": fib_levels,
             "ohlcv": ohlcv,
             "ma50":  ma50_val, "ma200": ma200_val, "ma_cross": ma_cross,
             "ma50_series": ma50_data, "ma200_series": ma200_data,
@@ -289,14 +362,15 @@ def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None, ticker_rt=None
             },
         }
     except Exception as e:
-        print(f"  [ERR] {ticker}: {e}")
+        print("  [ERR] " + ticker + ": " + str(e))
         _empty = {"rsi": None, "hist": None, "crossover": "neutral"}
         return {"ok": False, "prix": None, "variation": None,
-                "swing": {"high": None, "low": None}, "fibo_auto": {}, "ohlcv": [],
+                "swing": {"high": None, "low": None}, "fibo_auto": {}, "fibonacci": {}, "ohlcv": [],
                 "ma50": None, "ma200": None, "ma_cross": None,
                 "ma50_series": [], "ma200_series": [], "sr_zones": [],
                 "nearest_sup": None, "nearest_res": None,
                 "daily": _empty.copy(), "weekly": _empty.copy()}
+
 
 # ── ZONES SUPPORT / RÉSISTANCE ────────────────────────────────────────────────
 
@@ -341,164 +415,128 @@ def detect_sr_zones(ohlcv, prix, window=5, tolerance=0.015):
     result.sort(key=lambda x: x["touches"], reverse=True)
     return result[:10]
 
+
+# ── LOGIQUE TIER ──────────────────────────────────────────────────────────────
+
+def _find_strong_support(prix, sr_zones, fib_382=None):
+    cands = [z for z in sr_zones if z["price"] < prix and z["type"] in ["support","both"]
+             and (z["strength"] in ["strong","medium"] or z["touches"] >= 2)]
+    if cands:
+        return max(cands, key=lambda z: z["price"])["price"]
+    return fib_382
+
+def evaluate_tier(key, d):
+    if not d or not d.get("ok"):
+        return {"tier": 0, "pct": 0, "label": "Données indisponibles", "next_missing": None, "conditions": {}}
+    cat    = ASSET_CATEGORY.get(key, "actions")
+    rsi_d  = d["daily"]["rsi"]
+    rsi_w  = d["weekly"]["rsi"]
+    macd_d = d["daily"]["crossover"]
+    macd_w = d["weekly"]["crossover"]
+    prix   = d["prix"]
+    ma_cross = d.get("ma_cross")
+    fib    = d.get("fibonacci", {})
+    fib_382 = fib.get("fib_382")
+    sr     = d.get("sr_zones", [])
+    strong_sup = _find_strong_support(prix, sr, fib_382) if prix else None
+    above_sup  = (prix > strong_sup) if strong_sup else (bool(fib_382 and prix and prix > fib_382))
+
+    if cat == "metaux":
+        c1_rsi = (rsi_d or 999) < 40
+        c1_fib = fib_382 is None or not prix or prix > fib_382
+        t1 = c1_rsi and c1_fib
+        t2 = t1 and macd_d in ["bullish","bullish_cross"]
+        t3 = t2 and macd_w in ["bullish","bullish_cross"]
+        conds = {
+            "tier_1": {"rsi_d_below_40": c1_rsi, "above_fib_382": c1_fib},
+            "tier_2": {"tier_1_met": t1, "macd_d_bullish": macd_d in ["bullish","bullish_cross"]},
+            "tier_3": {"tier_2_met": t2, "macd_w_confirms": macd_w in ["bullish","bullish_cross"]},
+        }
+        tiers_list = [(3,100,"Conviction pleine"),(2,60,"Renforcement"),(1,25,"Surveillance active"),(0,0,"Hors zone")]
+        met_list   = [t3, t2, t1, True]
+    elif cat == "crypto":
+        c1_rsi = (rsi_w or 999) < 35
+        c1_fib = fib_382 is None or not prix or prix > fib_382
+        t1 = c1_rsi and c1_fib
+        t2 = t1 and macd_d in ["bullish","bullish_cross"]
+        t3 = t2 and macd_w in ["bullish","bullish_cross"] and ma_cross != "death"
+        conds = {
+            "tier_1": {"rsi_w_below_35": c1_rsi, "above_fib_382": c1_fib},
+            "tier_2": {"tier_1_met": t1, "macd_d_bullish": macd_d in ["bullish","bullish_cross"]},
+            "tier_3": {"tier_2_met": t2, "macd_w_bullish": macd_w in ["bullish","bullish_cross"], "no_death_cross": ma_cross != "death"},
+        }
+        tiers_list = [(3,100,"Retournement confirmé"),(2,60,"Rebond technique"),(1,30,"Capitulation"),(0,0,"Hors zone")]
+        met_list   = [t3, t2, t1, True]
+    else:
+        c1_rsi = (rsi_d or 999) < 40
+        t1 = c1_rsi and above_sup
+        t2 = t1 and macd_d in ["bullish","bullish_cross"]
+        t3 = t2 and macd_w in ["bullish","bullish_cross"]
+        conds = {
+            "tier_1": {"rsi_d_below_40": c1_rsi, "above_strong_support": above_sup},
+            "tier_2": {"tier_1_met": t1, "macd_d_bullish": macd_d in ["bullish","bullish_cross"]},
+            "tier_3": {"tier_2_met": t2, "macd_w_confirms": macd_w in ["bullish","bullish_cross"]},
+        }
+        tiers_list = [(3,100,"Tendance confirmée"),(2,60,"Momentum retourne"),(1,25,"Survente — entrée progressive"),(0,0,"Hors zone")]
+        met_list   = [t3, t2, t1, True]
+
+    tier, pct, label = next((t,p,l) for (t,p,l),m in zip(tiers_list, met_list) if m)
+    next_missing = None
+    if tier < 3:
+        for k, v in conds.get("tier_" + str(tier+1), {}).items():
+            if not v:
+                next_missing = k.replace("_", " ")
+                break
+    return {"tier": tier, "pct": pct, "label": label, "next_missing": next_missing, "conditions": conds}
+
+
+# ── LOGIQUE EXIT ──────────────────────────────────────────────────────────────
+
+def evaluate_exit_signal(key, d):
+    cat = ASSET_CATEGORY.get(key, "actions")
+    th  = EXIT_RSI_THRESHOLDS.get(cat, EXIT_RSI_THRESHOLDS["actions"])
+    rsi_w = d["weekly"]["rsi"] if d and d.get("ok") else None
+    if rsi_w is None:
+        return {"status": "UNKNOWN", "rsi_w": None, **th, "dist_sell50": None}
+    status = ("SELL_100" if rsi_w > th["sell_100"] else
+              "SELL_50"  if rsi_w > th["sell_50"]  else
+              "REBUY"    if rsi_w < th["rebuy"]     else "HOLD")
+    return {"status": status, "rsi_w": rsi_w, "dist_sell50": round(th["sell_50"] - rsi_w, 1), **th}
+
+
 # ── LOGIQUE SIGNAL ────────────────────────────────────────────────────────────
 
 def evaluate_signal(key, cfg, d):
     if not d or not d.get("ok"):
         return {"label": "DONNEES INDISPONIBLES", "color": "gray", "action": "—"}
-    p      = d["prix"]
-    rsi_d  = d["daily"]["rsi"]
-    rsi_w  = d["weekly"]["rsi"]
-    cd     = d["daily"]["crossover"]
-    cw     = d["weekly"]["crossover"]
+    tier_info = evaluate_tier(key, d)
+    exit_s    = evaluate_exit_signal(key, d)
+    tier, pct, label = tier_info["tier"], tier_info["pct"], tier_info["label"]
+    next_m = tier_info["next_missing"]
+    # Exit signals take priority
+    if exit_s["status"] == "SELL_100":
+        return {"label": "VENDRE 100%", "color": "red",
+                "action": "RSI weekly " + str(exit_s["rsi_w"]) + " > " + str(exit_s["sell_100"]) + " — alléger totalement"}
+    if exit_s["status"] == "SELL_50":
+        return {"label": "VENDRE 50%", "color": "orange",
+                "action": "RSI weekly " + str(exit_s["rsi_w"]) + " > " + str(exit_s["sell_50"]) + " — alléger 50%"}
+    colors = {3: "green", 2: "yellow", 1: "teal", 0: "gray"}
+    if tier == 3:
+        action = "T3 " + str(pct) + "% — " + label
+    elif tier == 2:
+        action = "T2 " + str(pct) + "% — " + label + " · manque T3 : " + (next_m or "?")
+    elif tier == 1:
+        action = "T1 " + str(pct) + "% — " + label + " · manque T2 : " + (next_m or "?")
+    else:
+        rsi_d = d["daily"]["rsi"]
+        fib = d.get("fibonacci", {})
+        fib_zone = fib.get("current_zone", "")
+        action = "Hors zone — manque T1 : " + (next_m or "?")
+        if rsi_d: action += " · RSI D: " + str(rsi_d)
+        if fib_zone: action += " · " + fib_zone
+    return {"label": "T" + str(tier) + " : " + label if tier > 0 else "HORS ZONE",
+            "color": colors[tier], "action": action}
 
-    if key == "EURUSD":
-        ok = p and p < TRIGGERS["eurusd_seuil"]
-        return {"label": "TRIGGER ATTEINT" if ok else "EN ATTENTE",
-                "color": "green" if ok else "yellow",
-                "action": "Renforcer ETCs Or &amp; Argent — EUR/USD=" + str(round(p,4)) if ok
-                          else "Surveiller passage sous 1.15 — actuel: " + (str(round(p,4)) if p else "—")}
-
-    if key == "BRENT":
-        if p and p < TRIGGERS["brent_actions"]:
-            return {"label": "SIGNAL ACTIONS", "color": "green",
-                    "action": "ETFs PEA debloqués — attendre 3 clotures consecutives"}
-        if p and p > TRIGGERS["brent_critique"]:
-            return {"label": "NIVEAU CRITIQUE", "color": "red",
-                    "action": "Brent &gt; 110$ — allegier actions, renforcer Or"}
-        return {"label": "EN ATTENTE", "color": "orange",
-                "action": "Actions bloquées — Brent=" + (str(round(p,2)) if p else "—") + "$ (seuil 90$)"}
-
-    if key == "PPFB":
-        if cw in ["bearish_cross","bearish"] and rsi_w and rsi_w > 70:
-            return {"label": "CORRECTION EN COURS", "color": "orange",
-                    "action": "RSI weekly " + str(rsi_w) + " surachat — attendre zone 82-84€"}
-        if cd in ["bullish","bullish_cross"] and p and p <= TRIGGERS["ppfb_zone1"]:
-            return {"label": "ZONE D'ACHAT", "color": "green",
-                    "action": "MACD daily haussier + prix en zone 1 (82-84€)"}
-        if p and p <= TRIGGERS["ppfb_zone1"]:
-            return {"label": "ZONE 1 ATTEINTE", "color": "teal",
-                    "action": "Prix en zone 82-84€ — surveiller croisement MACD daily"}
-        return {"label": "EN ATTENTE", "color": "yellow",
-                "action": "Attendre repli vers 84€ — actuel: " + (str(round(p,2)) if p else "—") + "€"}
-
-    if key == "XAD6":
-        if cd in ["bullish_cross","bullish"] and p and p <= TRIGGERS["xad6_zone1"]:
-            return {"label": "SIGNAL ACTIF", "color": "green",
-                    "action": "MACD daily haussier + zone 1 — ENTRER"}
-        if cd in ["bullish_cross","bullish"]:
-            return {"label": "MACD HAUSSIER", "color": "teal",
-                    "action": "Signal actif mais prix au-dessus zone 1 (660€) — attendre repli"}
-        if cd == "bearish_cross":
-            return {"label": "CROISEMENT BAISSIER", "color": "red",
-                    "action": "Croisement MACD daily baissier — ne pas entrer"}
-        return {"label": "ATTENTE SIGNAL", "color": "yellow",
-                "action": "Surveiller croisement MACD daily haussier"}
-
-    if key == "GOLD":
-        z_high, z382, z50, z618 = cfg["fibo_zones"][0], cfg["fibo_zones"][1], cfg["fibo_zones"][2], cfg["fibo_zones"][3]
-        ma_cross = d.get("ma_cross")
-        # Surachat weekly : alerte correction
-        if cw in ["bearish_cross", "bearish"] and rsi_w and rsi_w > 70:
-            return {"label": "CORRECTION EN COURS", "color": "orange",
-                    "action": "RSI weekly " + str(rsi_w) + " surachat — attendre zone 38.2% (" + str(z382) + "€)"}
-        # Golden cross + MACD haussier : tendance forte
-        if ma_cross == "golden" and cd in ["bullish", "bullish_cross"] and cw in ["bullish", "bullish_cross"]:
-            return {"label": "TENDANCE HAUSSIERE", "color": "green",
-                    "action": "Golden cross + MACD D/W haussiers — conserver, surveiller RSI weekly"}
-        # MACD daily haussier en zone fibo → signal d'achat
-        if cd in ["bullish", "bullish_cross"] and p and p <= z382:
-            return {"label": "ZONE D'ACHAT", "color": "green",
-                    "action": "MACD daily haussier + Fibo 38.2% (" + str(z382) + "€) — ENTRER"}
-        if cd in ["bullish", "bullish_cross"] and p and p <= z50:
-            return {"label": "ZONE FIBO 50%", "color": "teal",
-                    "action": "MACD daily haussier + Fibo 50% (" + str(z50) + "€) — renforcer"}
-        if cd in ["bullish", "bullish_cross"] and p and p <= z618:
-            return {"label": "ZONE FIBO 61.8%", "color": "teal",
-                    "action": "Zone doree (" + str(z618) + "€) — surveiller confirmation weekly"}
-        # Prix en zone fibo sans MACD haussier → attendre confirmation
-        if p and p <= z618:
-            return {"label": "ZONE 61.8% ATTEINTE", "color": "teal",
-                    "action": "Zone doree (" + str(z618) + "€) — attendre croisement MACD daily"}
-        if p and p <= z50:
-            return {"label": "ZONE 50% ATTEINTE", "color": "yellow",
-                    "action": "Fibo 50% (" + str(z50) + "€) — surveiller croisement MACD daily"}
-        if p and p <= z382:
-            return {"label": "ZONE 38.2% ATTEINTE", "color": "yellow",
-                    "action": "Fibo 38.2% (" + str(z382) + "€) — surveiller croisement MACD daily"}
-        # Death cross : prudence
-        if ma_cross == "death":
-            return {"label": "DEATH CROSS", "color": "red",
-                    "action": "MA50 sous MA200 — ne pas renforcer, attendre retournement"}
-        if cd == "bearish_cross":
-            return {"label": "CROISEMENT BAISSIER", "color": "orange",
-                    "action": "MACD daily croise baissier — allegier ou attendre repli vers Fibo"}
-        return {"label": "EN ATTENTE", "color": "yellow",
-                "action": "Attendre repli vers Fibo 38.2% (" + str(z382) + "€) — actuel: " + (str(round(p, 2)) if p else "—") + "€"}
-
-    if key == "PHAG":
-        z_high, z382, z50, z618 = cfg["fibo_zones"][0], cfg["fibo_zones"][1], cfg["fibo_zones"][2], cfg["fibo_zones"][3]
-        ma_cross = d.get("ma_cross")
-        # Signal d'achat : MACD haussier en zone fibo
-        if cd in ["bullish_cross", "bullish"] and p and p <= z382:
-            return {"label": "SIGNAL ACTIF", "color": "green",
-                    "action": "MACD daily haussier + Fibo 38.2% (" + str(z382) + "€) — ENTRER"}
-        if cd in ["bullish_cross", "bullish"] and p and p <= z50:
-            return {"label": "ZONE FIBO 50%", "color": "teal",
-                    "action": "MACD daily haussier + Fibo 50% (" + str(z50) + "€) — renforcer"}
-        if cd in ["bullish_cross", "bullish"] and p and p <= z618:
-            return {"label": "ZONE FIBO 61.8%", "color": "teal",
-                    "action": "Zone dorée (" + str(z618) + "€) — signal fort, confirmer weekly"}
-        if cd in ["bullish_cross", "bullish"]:
-            return {"label": "MACD HAUSSIER", "color": "teal",
-                    "action": "MACD daily haussier mais prix haut — attendre repli vers Fibo 38.2% (" + str(z382) + "€)"}
-        # Prix en zone fibo sans MACD haussier → attendre confirmation
-        if p and p <= z618:
-            return {"label": "ZONE 61.8% ATTEINTE", "color": "teal",
-                    "action": "Zone doree (" + str(z618) + "€) — attendre croisement MACD daily"}
-        if p and p <= z50:
-            return {"label": "ZONE 50% ATTEINTE", "color": "yellow",
-                    "action": "Fibo 50% (" + str(z50) + "€) — surveiller croisement MACD daily"}
-        if p and p <= z382:
-            return {"label": "ZONE 38.2% ATTEINTE", "color": "yellow",
-                    "action": "Fibo 38.2% (" + str(z382) + "€) — surveiller croisement MACD daily"}
-        # Correction / danger
-        if ma_cross == "death":
-            return {"label": "DEATH CROSS", "color": "red",
-                    "action": "MA50 sous MA200 — ne pas entrer, attendre retournement"}
-        if cd == "bearish_cross":
-            return {"label": "CROISEMENT BAISSIER", "color": "red",
-                    "action": "MACD daily croise baissier — ne pas entrer"}
-        return {"label": "ATTENTE SIGNAL", "color": "yellow",
-                "action": "Surveiller croisement MACD daily haussier + Fibo 38.2% (" + str(z382) + "€)"}
-
-    if key == "BTC":
-        if cw in ["bullish","bullish_cross"] and cd in ["bullish","bullish_cross"]:
-            return {"label": "SIGNAL LONG TERME", "color": "green",
-                    "action": "MACD weekly ET daily haussiers — acheter selon Fibonacci"}
-        if cw in ["bearish","bearish_cross"]:
-            if p and p < TRIGGERS["btc_fibo618"]:
-                return {"label": "ZONE FIBO 61.8%", "color": "teal",
-                        "action": "Zone dorée atteinte — surveiller MACD weekly"}
-            if p and p < TRIGGERS["btc_fibo50"]:
-                return {"label": "ZONE FIBO 50%", "color": "yellow",
-                        "action": "Sous Fibo 50% — signal weekly absent"}
-            return {"label": "BEAR MARKET", "color": "red",
-                    "action": "MACD weekly baissier — NE PAS ACHETER"}
-        return {"label": "NEUTRE", "color": "yellow", "action": "Surveiller MACD weekly"}
-
-    if cfg["categorie"] == "actions":
-        z1, z2 = cfg["fibo_zones"][0], cfg["fibo_zones"][1]
-        if p and p <= z2:
-            return {"label": "ZONE 2 FIBO", "color": "teal",
-                    "action": "Zone 2 atteinte — conditionnel Brent &lt; 90$"}
-        if p and p <= z1:
-            return {"label": "ZONE 1 FIBO", "color": "yellow",
-                    "action": "Zone 1 atteinte — conditionnel Brent &lt; 90$"}
-        return {"label": "EN ATTENTE", "color": "gray",
-                "action": "Brent &gt; 90$ requis — prix: " + (str(round(p,2)) if p else "—") + "€"}
-
-    return {"label": "—", "color": "gray", "action": "—"}
 
 # ── HTML HELPERS ──────────────────────────────────────────────────────────────
 
@@ -530,15 +568,6 @@ def fmt_price(p, devise):
     if p > 100:   return "{:,.2f}".format(p)
     return "{:,.3f}".format(p)
 
-def fibo_pills(prix, zones, devise):
-    out = ""
-    for z in zones:
-        active = prix is not None and prix <= z * 1.05
-        cls    = 'fibo-pill active' if active else 'fibo-pill'
-        label  = "{:,}".format(z) if z > 100 else str(z)
-        out   += "<span class='" + cls + "'>" + devise + label + "</span>"
-    return out
-
 def h(tag, cls, content):
     return "<" + tag + " class='" + cls + "'>" + content + "</" + tag + ">"
 
@@ -569,17 +598,6 @@ def fibo_alert(prix, fibo_auto, static_zones, devise, swing):
         out += "<div class='fibo-alert-pill close'>⚠ PRIX SUR FIBO " + "{:.1f}".format(best_r*100) + "% — " + "{:+.1f}".format(dist) + "% " + direction + "</div>"
     elif abs(dist) <= 3.0:
         out += "<div class='fibo-alert-pill'>&#128205; Approche Fibo " + "{:.1f}".format(best_r*100) + "% — " + "{:+.1f}".format(dist) + "% " + direction + "</div>"
-    # Alerte niveaux statiques obsolètes (>15% d'écart)
-    if static_zones and fibo_auto:
-        auto_levels = list(fibo_auto.values())
-        for sz in static_zones:
-            if sz <= 0: continue
-            nearest = min(auto_levels, key=lambda x: abs(x - sz))
-            if abs(nearest - sz) / sz > 0.15:
-                sh = _fmt_level(swing["high"], devise) if swing and swing["high"] else "—"
-                sl = _fmt_level(swing["low"],  devise) if swing and swing["low"]  else "—"
-                out += "<div class='fibo-recalib-pill'>&#x1F504; Niveaux a recalibrer · swing " + sl + " → " + sh + "</div>"
-                break
     return out
 
 def _ma_cls(prix, ma_val):
@@ -593,6 +611,9 @@ def _sr_row(zone, devise):
     sym = "▲" if zone["type"] == "resistance" else ("▼" if zone["type"] == "support" else "◆")
     strength_map = {"strong": "●●●", "medium": "●●○", "weak": "●○○"}
     return sym + " " + _fmt_level(zone["price"], devise) + " " + strength_map.get(zone["strength"], "")
+
+
+# ── BUILD CARD ────────────────────────────────────────────────────────────────
 
 def build_card(key, cfg, d, sig):
     prix_val  = d["prix"]      if d else None
@@ -619,10 +640,67 @@ def build_card(key, cfg, d, sig):
     cross_label = "GOLDEN ✦" if ma_cross == "golden" else ("DEATH ✕" if ma_cross == "death" else "—")
     cross_cls   = "bullish" if ma_cross == "golden" else ("bearish" if ma_cross == "death" else "neutral")
 
+    # Tier badge
+    tier_info = evaluate_tier(key, d)
+    exit_s    = evaluate_exit_signal(key, d)
+    tier      = tier_info["tier"]
+    tier_bars = "".join(
+        "<span class='tb-filled t" + str(tier) + "'></span>" if i <= tier else "<span class='tb-empty'></span>"
+        for i in range(1, 4)
+    )
+    tier_html = (
+        "<div class='tier-row'>"
+        + "<div class='tier-bar'>" + tier_bars + "</div>"
+        + "<span class='tier-badge t" + str(tier) + "'>T" + str(tier) + " " + str(tier_info["pct"]) + "%</span>"
+        + "<span class='tier-label'>" + tier_info["label"] + "</span>"
+        + ("<span class='tier-next'>→ manque : " + tier_info["next_missing"] + "</span>" if tier_info["next_missing"] and tier < 3 else "")
+        + "</div>"
+    )
+    # Exit badge
+    es = exit_s["status"]
+    es_colors = {"HOLD": "green", "SELL_50": "orange", "SELL_100": "red", "REBUY": "teal", "UNKNOWN": "gray"}
+    exit_html = (
+        "<div class='exit-row'>"
+        + h("span", "exit-badge ex-" + es_colors.get(es,"gray"), es)
+        + " RSI W: " + (str(exit_s["rsi_w"]) if exit_s["rsi_w"] else "—")
+        + (" · dist→sell50: " + str(exit_s.get("dist_sell50","—")) + " pts" if es == "HOLD" else "")
+        + "</div>"
+    )
+    # Fibonacci dynamique bar
+    fib = d.get("fibonacci", {}) if d else {}
+    fib_html = ""
+    if fib and "fib_0" in fib and "fib_100" in fib:
+        lo, hi = fib["fib_0"], fib["fib_100"]
+        rng = hi - lo
+        if rng > 0:
+            def _pct(v): return round((v - lo) / rng * 100, 1)
+            zone_segments = [
+                ("fib_0","fib_236","#ff4757"),("fib_236","fib_382","#ffa726"),
+                ("fib_382","fib_500","#ffee58"),("fib_500","fib_618","#26c6da"),
+                ("fib_618","fib_786","#00e676"),("fib_786","fib_100","#3d7aed"),
+            ]
+            segs = "".join(
+                "<div class='fib-seg' style='left:" + str(_pct(fib[s])) + "%;width:" + str(_pct(fib[e])-_pct(fib[s])) + "%;background:" + c + "'></div>"
+                for s,e,c in zone_segments
+            )
+            pos = max(0, min(100, _pct(prix_val))) if prix_val else 50
+            segs += "<div class='fib-marker' style='left:" + str(pos) + "%'></div>"
+            zone_label = fib.get("current_zone","")
+            fib_html = (
+                "<div class='fib-dyn-label'>FIBO ATH→SWING LOW · " + zone_label + "</div>"
+                + "<div class='fib-dyn-bar'>" + segs + "</div>"
+                + "<div class='fib-dyn-vals'>"
+                + "<span>0% " + _fmt_level(fib["fib_0"], cfg["devise"]) + "</span>"
+                + "<span>38.2% " + _fmt_level(fib["fib_382"], cfg["devise"]) + "</span>"
+                + "<span>61.8% " + _fmt_level(fib["fib_618"], cfg["devise"]) + "</span>"
+                + "<span>ATH " + _fmt_level(fib["fib_100"], cfg["devise"]) + "</span>"
+                + "</div>"
+            )
+
     return (
         "<div class='asset-card " + color + "'>"
         + "<div class='card-top'>"
-        + "<div>" + h("div","asset-name",cfg["nom"]) + h("div","asset-ticker",cfg["ticker"]) + "</div>"
+        + "<div>" + h("div","asset-name",cfg["nom"]) + h("div","asset-ticker",cfg["primary"]) + "</div>"
         + "<div class='price-block'>"
         + h("div","price-value", cfg["devise"] + fmt_price(prix_val, cfg["devise"]) + source_badge)
         + h("div","price-change " + var_cls, var_str)
@@ -642,13 +720,14 @@ def build_card(key, cfg, d, sig):
         + "<div class='ind-block'>" + h("div","ind-label","Support")     + h("div","ind-value sr-sup",  _sr_row(n_sup, cfg["devise"])) + "</div>"
         + "<div class='ind-block'>" + h("div","ind-label","Résistance")  + h("div","ind-value sr-res",  _sr_row(n_res, cfg["devise"])) + "</div>"
         + "</div>"
-        + "<div class='fibo-zones'>" + fibo_pills(prix_val, cfg["fibo_zones"], cfg["devise"]) + "</div>"
-        + fibo_auto_pills(prix_val, fa, cfg["devise"])
-        + fibo_alert(prix_val, fa, cfg["fibo_zones"], cfg["devise"], swing)
+        + tier_html + exit_html + fib_html
+        + "<div class='fibo-zones'>" + fibo_auto_pills(prix_val, fa, cfg["devise"]) + "</div>"
+        + fibo_alert(prix_val, fa, None, cfg["devise"], swing)
         + "<button class='chart-toggle' onclick=\"var w=this.nextElementSibling;w.classList.toggle('open');this.textContent=w.classList.contains('open')?'▲ Masquer le chart':'▼ Afficher le chart';\">▼ Afficher le chart</button>"
         + "<div class='chart-wrap' id='chart-" + key + "' style='height:220px'></div>"
         + "</div>"
     )
+
 
 # ── CSS (raw string — pas de .format()) ──────────────────────────────────────
 
@@ -676,30 +755,8 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 .subtitle{color:var(--text-dim);font-size:11px;margin-top:4px;letter-spacing:1px;text-transform:uppercase}
 .timestamp{text-align:right;color:var(--text-dim);font-size:11px;line-height:1.8;flex-shrink:0}
 .timestamp .date{color:var(--gold);font-size:14px;font-weight:600}
-.conditions-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:24px}
-.cond-pill{padding:10px 14px;border-radius:6px;border:1px solid}
-.cond-label{font-size:10px;text-transform:uppercase;letter-spacing:1px;opacity:.7}
-.cond-value{font-size:15px;font-weight:700;font-family:'Syne',sans-serif;margin:3px 0}
-.cond-status{font-size:10px}
-.cond-pill.green{background:var(--green-bg);border-color:var(--green)}
-.cond-pill.green .cond-value{color:var(--green)}
-.cond-pill.red{background:var(--red-bg);border-color:var(--red)}
-.cond-pill.red .cond-value{color:var(--red)}
-.cond-pill.orange{background:var(--orange-bg);border-color:var(--orange)}
-.cond-pill.orange .cond-value{color:var(--orange)}
-.cond-pill.yellow{background:var(--yellow-bg);border-color:var(--yellow)}
-.cond-pill.yellow .cond-value{color:var(--yellow)}
-.cond-pill.teal{background:var(--teal-bg);border-color:var(--teal)}
-.cond-pill.teal .cond-value{color:var(--teal)}
 .section-title{font-family:'Syne',sans-serif;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);margin:20px 0 10px;display:flex;align-items:center;gap:8px}
 .section-title::after{content:'';flex:1;height:1px;background:var(--border)}
-.scenario-bar{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px 20px;margin-bottom:20px;display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
-.scenario-item{text-align:center}
-.scenario-name{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim);margin-bottom:6px}
-.scenario-prob{font-family:'Syne',sans-serif;font-size:28px;font-weight:800;margin-bottom:4px}
-.scenario-desc{font-size:11px;color:var(--text-dim)}
-.prob-bar-container{height:4px;background:var(--border);border-radius:2px;margin-top:8px;overflow:hidden}
-.prob-bar{height:100%;border-radius:2px}
 .assets-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
 .asset-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;position:relative;overflow:hidden}
 .asset-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--border)}
@@ -754,20 +811,71 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 .fibo-alert-pill.close{background:rgba(255,167,38,.15);border-color:rgba(255,167,38,.6);color:var(--orange);animation:pulse-border 1.5s ease-in-out infinite}
 @keyframes pulse-border{0%,100%{border-color:rgba(255,167,38,.6)}50%{border-color:rgba(255,167,38,1)}}
 .fibo-recalib-pill{display:block;padding:3px 8px;border-radius:3px;font-size:10px;background:rgba(84,110,122,.12);border:1px dashed var(--gray);color:var(--gray);margin-top:4px;text-align:center}
+/* Tier badges */
+.tier-row{display:flex;align-items:center;gap:8px;margin:8px 0 4px;flex-wrap:wrap}
+.tier-bar{display:flex;gap:2px}
+.tb-filled,.tb-empty{width:10px;height:10px;border-radius:2px}
+.tb-empty{background:var(--border)}
+.tb-filled.t3{background:var(--green)}
+.tb-filled.t2{background:var(--yellow)}
+.tb-filled.t1{background:var(--teal)}
+.tb-filled.t0{background:var(--gray)}
+.tier-badge{display:inline-block;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:700}
+.tier-badge.t3{background:var(--green-bg);color:var(--green);border:1px solid rgba(0,230,118,.3)}
+.tier-badge.t2{background:var(--yellow-bg);color:var(--yellow);border:1px solid rgba(255,238,88,.3)}
+.tier-badge.t1{background:var(--teal-bg);color:var(--teal);border:1px solid rgba(38,198,218,.3)}
+.tier-badge.t0{background:var(--gray-bg);color:var(--gray);border:1px solid rgba(84,110,122,.3)}
+.tier-label{font-size:11px;color:var(--text-dim)}
+.tier-next{font-size:10px;color:var(--orange)}
+/* Exit badges */
+.exit-row{font-size:11px;color:var(--text-dim);margin-bottom:6px}
+.exit-badge{display:inline-block;padding:2px 7px;border-radius:3px;font-size:10px;font-weight:700}
+.ex-green{background:var(--green-bg);color:var(--green);border:1px solid rgba(0,230,118,.3)}
+.ex-orange{background:var(--orange-bg);color:var(--orange);border:1px solid rgba(255,167,38,.3)}
+.ex-red{background:var(--red-bg);color:var(--red);border:1px solid rgba(255,71,87,.3)}
+.ex-teal{background:var(--teal-bg);color:var(--teal);border:1px solid rgba(38,198,218,.3)}
+.ex-gray{background:var(--gray-bg);color:var(--gray);border:1px solid rgba(84,110,122,.3)}
+/* Dynamic Fibonacci bar */
+.fib-dyn-label{font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin-top:8px}
+.fib-dyn-bar{position:relative;height:12px;background:var(--bg3);border-radius:2px;margin:4px 0 2px;overflow:hidden;border:1px solid var(--border)}
+.fib-seg{position:absolute;top:0;height:100%;opacity:0.4}
+.fib-marker{position:absolute;top:0;width:2px;height:100%;background:var(--gold);z-index:2}
+.fib-dyn-vals{display:flex;justify-content:space-between;font-size:9px;color:var(--text-dim);flex-wrap:wrap}
+/* Summary banner */
+.summary-banner{display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;align-items:center}
+.sum-pill{padding:7px 14px;border-radius:5px;border:1px solid;font-size:12px;font-weight:700;font-family:'Syne',sans-serif}
+.sum-t3{background:var(--green-bg);border-color:var(--green);color:var(--green)}
+.sum-t2{background:var(--yellow-bg);border-color:var(--yellow);color:var(--yellow)}
+.sum-t1{background:var(--teal-bg);border-color:var(--teal);color:var(--teal)}
+.sum-t0{background:var(--gray-bg);border-color:var(--gray);color:var(--gray)}
+.sum-exit{background:var(--red-bg);border-color:var(--red);color:var(--red)}
+.risk-badge{margin-left:auto;padding:7px 14px;border-radius:5px;font-size:11px;font-weight:700;letter-spacing:1px}
+.risk-HIGH{background:var(--red-bg);border:1px solid var(--red);color:var(--red)}
+.risk-MEDIUM{background:var(--orange-bg);border:1px solid var(--orange);color:var(--orange)}
+.risk-LOW{background:var(--green-bg);border:1px solid var(--green);color:var(--green)}
+/* ETF Ranking */
+.etf-ranking{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:20px}
+.etf-rank-card{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:10px 12px;display:flex;align-items:center;gap:8px}
+.etf-rank-card.first{border-color:var(--gold);background:rgba(255,213,79,.04)}
+.etf-rank-num{font-size:18px;font-weight:800;font-family:'Syne',sans-serif;color:var(--text-dim);width:22px}
+.etf-rank-card.first .etf-rank-num{color:var(--gold)}
+.etf-rank-info .name{font-weight:700;color:var(--text-bright);font-size:12px}
+.etf-rank-info .rsi{font-size:10px;color:var(--text-dim)}
+/* Cross signals */
+.cross-signals{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-bottom:20px}
+.cross-card{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:10px 14px}
+.cross-card .cc-label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim);margin-bottom:4px}
+.cross-card .cc-value{font-size:14px;font-weight:700;font-family:'Syne',sans-serif}
+.cc-green{color:var(--green)}.cc-red{color:var(--red)}.cc-yellow{color:var(--yellow)}.cc-teal{color:var(--teal)}.cc-gray{color:var(--gray)}
 @media(max-width:900px){
-  .conditions-bar{grid-template-columns:repeat(2,1fr)}
-  .scenario-bar{grid-template-columns:repeat(2,1fr)}
   .assets-grid{grid-template-columns:1fr}
   body{padding:12px}
 }
 @media(max-width:520px){
-  .conditions-bar{grid-template-columns:1fr}
-  .scenario-bar{grid-template-columns:1fr}
   .header{flex-direction:column}
   .timestamp{text-align:left}
   .price-value{font-size:15px}
   body{padding:8px}
-  .cond-value{font-size:13px}
 }
 """
 
@@ -775,50 +883,54 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 
 def build_html(now, cards_by_cat, conds, errors, charts_json="{}"):
 
-    def cond_pill(color, label_top, value, status):
-        return (
-            "<div class='cond-pill " + color + "'>"
-            + "<div class='cond-label'>" + label_top + "</div>"
-            + "<div class='cond-value'>"  + value     + "</div>"
-            + "<div class='cond-status'>" + status    + "</div>"
-            + "</div>"
-        )
-
-    conditions_bar = (
-        "<div class='conditions-bar'>"
-        + cond_pill(conds["eu_col"],  "EUR/USD · Seuil 1,15", conds["eu_p"],  conds["eu_s"])
-        + cond_pill(conds["br_col"],  "Brent · Seuil 90$",   conds["br_p"]+"$", conds["br_s"])
-        + cond_pill(conds["xd_col"],  "XAD6 · MACD Daily",   conds["xd_l"],  conds["xd_d"])
-        + cond_pill(conds["bt_col"],  "BTC · MACD Weekly",   conds["bt_l"],  conds["bt_d"])
+    # Summary banner
+    summary_html = (
+        "<div class='summary-banner'>"
+        + "<div class='sum-pill sum-t3'>T3 : " + str(conds["t3"]) + "</div>"
+        + "<div class='sum-pill sum-t2'>T2 : " + str(conds["t2"]) + "</div>"
+        + "<div class='sum-pill sum-t1'>T1 : " + str(conds["t1"]) + "</div>"
+        + "<div class='sum-pill sum-t0'>T0 : " + str(conds["t0"]) + "</div>"
+        + "<div class='sum-pill sum-exit'>" + str(conds["exits"]) + " sortie(s) active(s)</div>"
+        + "<div class='risk-badge risk-" + conds["risk"] + "'>RISQUE : " + conds["risk"] + "</div>"
         + "</div>"
     )
 
-    def scen(name, pct, desc, clr):
-        return (
-            "<div class='scenario-item'>"
-            + "<div class='scenario-name'>"  + name + "</div>"
-            + "<div class='scenario-prob' style='color:" + clr + "'>" + pct + "</div>"
-            + "<div class='scenario-desc'>"  + desc + "</div>"
-            + "<div class='prob-bar-container'><div class='prob-bar' style='width:" + pct + ";background:" + clr + "'></div></div>"
-            + "</div>"
+    # ETF ranking
+    etf_html = "<div class='section-title'>Classement ETF — Premier de la classe</div><div class='etf-ranking'>"
+    for item in conds.get("etf_ranking", []):
+        is_first = item["rank"] == 1
+        etf_html += (
+            "<div class='etf-rank-card" + (" first" if is_first else "") + "'>"
+            + "<div class='etf-rank-num'>#" + str(item["rank"]) + "</div>"
+            + "<div class='etf-rank-info'>"
+            + "<div class='name'>" + item["ticker"] + (" 🥇" if is_first else "") + "</div>"
+            + "<div class='rsi'>RSI D: <span class='" + rc(item.get("rsi_d")) + "'>" + (str(item["rsi_d"]) if item.get("rsi_d") else "—") + "</span></div>"
+            + "<span class='tier-badge t" + str(item["tier"]) + "'>T" + str(item["tier"]) + "</span>"
+            + "</div></div>"
         )
+    etf_html += "</div>"
 
-    scenarios = (
-        "<div class='section-title'>Scenarios Geopolitiques</div>"
-        + "<div class='scenario-bar'>"
-        + scen("Scenario A — Desescalade",    "15%", "Resolution rapide Iran · Brent &lt; 80$",         "var(--green)")
-        + scen("Scenario B — Conflit prolonge","60%", "Hormuz partiellement bloque · Brent 90-110$",    "var(--orange)")
-        + scen("Scenario C — Escalade",        "25%", "Hormuz ferme · Brent &gt; 110$ · Recession",    "var(--red)")
+    # Cross signals
+    cross = conds.get("cross", {})
+    metals_conv = cross.get("metals_conviction","normal")
+    btc_death   = cross.get("btc_death_cross", False)
+    etf_first   = cross.get("etf_first","—")
+    etf_t1      = cross.get("etf_t1_count", 0)
+    cross_html = (
+        "<div class='section-title'>Signaux Croises</div>"
+        + "<div class='cross-signals'>"
+        + "<div class='cross-card'><div class='cc-label'>Conviction Metaux</div><div class='cc-value cc-" + ("green" if metals_conv=="high" else "yellow") + "'>" + metals_conv.upper() + "</div></div>"
+        + "<div class='cross-card'><div class='cc-label'>BTC MA Cross</div><div class='cc-value cc-" + ("red" if btc_death else "green") + "'>" + ("DEATH CROSS" if btc_death else "OK") + "</div></div>"
+        + "<div class='cross-card'><div class='cc-label'>ETF Premier de classe</div><div class='cc-value cc-yellow'>" + str(etf_first) + "</div><div style='font-size:10px;color:var(--text-dim)'>" + str(etf_t1) + " ETF(s) en T1+</div></div>"
         + "</div>"
     )
 
     TITLES = {
-        "metaux":  "ETCs Metaux Precieux",
-        "macro":   "Referentiels Macro",
+        "metaux":  "ETCs Metaux Precieux · CTO",
         "crypto":  "Crypto",
-        "actions": "ETFs PEA Actions · Conditionnels (Brent &lt; 90$)",
+        "actions": "ETFs Actions · CTO",
     }
-    ORDER = ["metaux", "macro", "crypto", "actions"]
+    ORDER = ["metaux", "crypto", "actions"]
     cards_html = ""
     for cat in ORDER:
         if cards_by_cat.get(cat):
@@ -835,21 +947,21 @@ def build_html(now, cards_by_cat, conds, errors, charts_json="{}"):
         "<!DOCTYPE html><html lang='fr'><head>"
         + "<meta charset='UTF-8'>"
         + "<meta name='viewport' content='width=device-width,initial-scale=1.0'>"
-        + "<title>Portfolio Signal Dashboard</title>"
+        + "<title>Portfolio Signal Dashboard — CTO</title>"
         + "<link href='https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Syne:wght@400;600;700;800&display=swap' rel='stylesheet'>"
         + "<style>" + CSS + "</style>"
         + "</head><body><div class='wrapper'>"
 
         + "<div class='header'>"
-        + "<div class='header-left'><h1>Portfolio <span>Signal</span> Dashboard</h1>"
-        + "<div class='subtitle'>MACD 12/26/9 · RSI 14 · Fibonacci · Yahoo Finance</div></div>"
+        + "<div class='header-left'><h1>Portfolio <span>CTO</span> Dashboard</h1>"
+        + "<div class='subtitle'>MACD 12/26/9 · RSI 14 · Fibonacci ATH · Tier 1-2-3 · Yahoo Finance</div></div>"
         + "<div class='timestamp'><div class='date'>" + now.strftime("%d/%m/%Y") + "</div>"
         + "<div>Mise a jour : " + now.strftime("%H:%M:%S") + "</div></div>"
         + "</div>"
 
-        + conditions_bar + scenarios + err_html + cards_html
+        + summary_html + etf_html + cross_html + err_html + cards_html
 
-        + "<div class='footer'>Donnees : Yahoo Finance · MACD(12,26,9) · RSI(14) · Fibonacci · MA50/MA200 · Support/Résistance"
+        + "<div class='footer'>Donnees : Yahoo Finance · MACD(12,26,9) · RSI(14) · Fibonacci ATH · MA50/MA200 · Support/Résistance · Tier 1-2-3"
         + "<br>Analyse personnelle — Pas un conseil financier · Relancer le script pour actualiser</div>"
         + "</div>"
         + "<script src='https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js'></script>"
@@ -922,63 +1034,72 @@ document.addEventListener('DOMContentLoaded',function(){
         + "</body></html>"
     )
 
+
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 
 def generate_dashboard():
     now = datetime.now()
     print("\n" + "="*55)
-    print("  PORTFOLIO SIGNAL DASHBOARD - " + now.strftime("%d/%m/%Y %H:%M"))
+    print("  PORTFOLIO CTO DASHBOARD - " + now.strftime("%d/%m/%Y %H:%M"))
     print("="*55 + "\n")
 
     all_data, errors = {}, []
-    for key, cfg in ASSETS.items():
-        print("  -> " + key + " (" + cfg["ticker"] + ")...")
+    for key, cfg in TICKER_MAP.items():
+        print("  -> " + key + " (" + cfg["primary"] + ")...")
         d = fetch_asset(
-            cfg["ticker"],
+            cfg["primary"],
             isin_fallback=cfg.get("isin"),
-            ticker_fallback=cfg.get("ticker_fallback"),
+            ticker_fallback=None,
             ticker_rt=cfg.get("ticker_rt"),
+            fallbacks=cfg.get("fallbacks", []),
         )
         all_data[key] = d
         if d and not d.get("ok"):
             errors.append(key)
 
-    signals = {k: evaluate_signal(k, ASSETS[k], all_data[k]) for k in ASSETS}
+    signals    = {k: evaluate_signal(k, TICKER_MAP[k], all_data[k]) for k in TICKER_MAP}
+    all_tiers  = {k: evaluate_tier(k, all_data[k]) for k in TICKER_MAP}
+    all_exits  = {k: evaluate_exit_signal(k, all_data[k]) for k in TICKER_MAP}
 
-    cards_by_cat = {"metaux": "", "macro": "", "crypto": "", "actions": ""}
-    for key, cfg in ASSETS.items():
-        cards_by_cat[cfg["categorie"]] += build_card(key, cfg, all_data[key], signals[key])
+    tier_counts = {t: sum(1 for k in TICKER_MAP if all_tiers[k]["tier"] == t) for t in range(4)}
+    exit_count  = sum(1 for k in TICKER_MAP if all_exits[k]["status"] in ["SELL_50","SELL_100"])
 
-    def safe_px(key, digits=4):
-        d = all_data.get(key)
-        p = d["prix"] if d and d.get("ok") and d["prix"] else None
-        if p is None: return "—"
-        fmt = "{:." + str(digits) + "f}"
-        return fmt.format(p)
+    # ETF ranking (tri par RSI D croissant = le plus survendu en premier)
+    etf_ranking = sorted(
+        [{"ticker": k,
+          "rsi_d": all_data[k]["daily"]["rsi"] if all_data[k] and all_data[k].get("ok") else None,
+          "tier": all_tiers[k]["tier"]}
+         for k in ETF_KEYS if all_data.get(k) and all_data[k].get("ok")],
+        key=lambda x: x["rsi_d"] if x["rsi_d"] else 999
+    )
+    for i, item in enumerate(etf_ranking):
+        item["rank"] = i + 1
 
-    def safe_cross(key, tf):
-        d = all_data.get(key)
-        if d and d.get("ok"): return d[tf]["crossover"]
-        return "neutral"
+    # Cross-asset signals
+    gold_t  = all_tiers.get("GOLD", {}).get("tier", 0)
+    phag_t  = all_tiers.get("PHAG", {}).get("tier", 0)
+    btc_d   = all_data.get("BTC") or {}
+    btc_death = btc_d.get("ma_cross") == "death" if btc_d.get("ok") else False
+    etf_first = etf_ranking[0]["ticker"] if etf_ranking else "—"
+    etf_t1    = sum(1 for k in ETF_KEYS if all_tiers.get(k, {}).get("tier", 0) >= 1)
 
-    eu_p  = safe_px("EURUSD", 4)
-    br_p  = safe_px("BRENT",  2)
-    eu_ok = all_data.get("EURUSD") and all_data["EURUSD"].get("ok") and all_data["EURUSD"]["prix"] and all_data["EURUSD"]["prix"] < 1.15
-    br_ok = all_data.get("BRENT")  and all_data["BRENT"].get("ok")  and all_data["BRENT"]["prix"]  and all_data["BRENT"]["prix"]  < 90
-    br_hi = all_data.get("BRENT")  and all_data["BRENT"].get("ok")  and all_data["BRENT"]["prix"]  and all_data["BRENT"]["prix"]  > 110
-    xd_c  = safe_cross("XAD6", "daily")
-    bt_c  = safe_cross("BTC",  "weekly")
+    risk = "HIGH" if btc_death or exit_count > 0 else ("LOW" if tier_counts[3] > 0 else "MEDIUM")
 
     conds = {
-        "eu_p":  eu_p, "eu_col": "green" if eu_ok else "yellow",
-        "eu_s":  "TRIGGER ATTEINT — Renforcer ETCs" if eu_ok else "Attendre passage sous 1.15",
-        "br_p":  br_p, "br_col": "green" if br_ok else ("red" if br_hi else "orange"),
-        "br_s":  "SIGNAL ACTIONS (attendre 3 clotures)" if br_ok else ("NIVEAU CRITIQUE &gt; 110$" if br_hi else "Actions bloquees — Brent &gt; 90$"),
-        "xd_l":  ml(xd_c), "xd_col": "green" if xd_c in ["bullish","bullish_cross"] else ("red" if xd_c in ["bearish","bearish_cross"] else "yellow"),
-        "xd_d":  "Signal d'entree actif" if xd_c in ["bullish","bullish_cross"] else "Attendre croisement haussier",
-        "bt_l":  ml(bt_c), "bt_col": "green" if bt_c in ["bullish","bullish_cross"] else "red",
-        "bt_d":  "Signal long terme actif" if bt_c in ["bullish","bullish_cross"] else "Signal absent — Ne pas acheter",
+        "t3": tier_counts[3], "t2": tier_counts[2], "t1": tier_counts[1], "t0": tier_counts[0],
+        "exits": exit_count, "risk": risk,
+        "etf_ranking": etf_ranking,
+        "cross": {
+            "metals_conviction": "high" if gold_t >= 2 and phag_t >= 2 else "normal",
+            "btc_death_cross": btc_death,
+            "etf_first": etf_first,
+            "etf_t1_count": etf_t1,
+        },
     }
+
+    cards_by_cat = {"metaux": "", "crypto": "", "actions": ""}
+    for key, cfg in TICKER_MAP.items():
+        cards_by_cat[cfg["categorie"]] += build_card(key, cfg, all_data[key], signals[key])
 
     # Données chart par actif
     import json as _json
@@ -1011,6 +1132,7 @@ def generate_dashboard():
         webbrowser.open("file://" + out)
     return out
 
+
 # ── RÉSUMÉ CLAUDE ────────────────────────────────────────────────────────────
 
 def generate_claude_summary():
@@ -1024,15 +1146,17 @@ def generate_claude_summary():
     print("="*55 + "\n")
 
     all_data = {}
-    for key, cfg in ASSETS.items():
-        print("  -> " + key + " (" + cfg["ticker"] + ")...")
+    for key, cfg in TICKER_MAP.items():
+        print("  -> " + key + " (" + cfg["primary"] + ")...")
         all_data[key] = fetch_asset(
-            cfg["ticker"],
+            cfg["primary"],
             isin_fallback=cfg.get("isin"),
-            ticker_fallback=cfg.get("ticker_fallback"),
+            fallbacks=cfg.get("fallbacks", []),
         )
 
-    signals = {k: evaluate_signal(k, ASSETS[k], all_data[k]) for k in ASSETS}
+    signals   = {k: evaluate_signal(k, TICKER_MAP[k], all_data[k]) for k in TICKER_MAP}
+    all_tiers = {k: evaluate_tier(k, all_data[k]) for k in TICKER_MAP}
+    all_exits = {k: evaluate_exit_signal(k, all_data[k]) for k in TICKER_MAP}
 
     def g(key, field, tf="daily", digits=2):
         d = all_data.get(key)
@@ -1055,10 +1179,11 @@ def generate_claude_summary():
     # Construction du JSON de snapshot
     snapshot = {
         "date": now.strftime("%d/%m/%Y %H:%M"),
+        "portfolio": "CTO_AGGRESSIVE",
         "assets": {}
     }
 
-    for key in ASSETS:
+    for key in TICKER_MAP:
         d   = all_data.get(key)
         ok    = d and d.get("ok")
         ma50  = round(d["ma50"],  2) if ok and d.get("ma50")  else None
@@ -1077,8 +1202,11 @@ def generate_claude_summary():
             }
             for z in sorted(sr_zones, key=lambda z: z["touches"], reverse=True)[:5]
         ]
+        fib = d.get("fibonacci", {}) if ok else {}
+        tier_info = all_tiers.get(key, {})
+        exit_info = all_exits.get(key, {})
         snapshot["assets"][key] = {
-            "prix":       px(key, 4 if key == "EURUSD" else 2),
+            "prix":       px(key, 2),
             "prix_source": d.get("prix_source", "yahoo") if ok else None,
             "var_pct":    vr(key),
             "rsi_d":      g(key, "rsi",       "daily"),
@@ -1093,32 +1221,21 @@ def generate_claude_summary():
             "support":    {"prix": round(n_sup["price"], 4), "force": n_sup["strength"], "touches": n_sup["touches"]} if n_sup else None,
             "resistance": {"prix": round(n_res["price"], 4), "force": n_res["strength"], "touches": n_res["touches"]} if n_res else None,
             "zones_sr":   sr_detail,
+            "fibonacci":  fib,
+            "tier":       {"level": tier_info.get("tier",0), "pct": tier_info.get("pct",0), "label": tier_info.get("label",""), "next_missing": tier_info.get("next_missing")},
+            "exit_signal": {"status": exit_info.get("status","UNKNOWN"), "rsi_w": exit_info.get("rsi_w"), "dist_sell50": exit_info.get("dist_sell50")},
             "signal":     signals[key]["label"],
             "color":      signals[key]["color"],
         }
 
-    # Triggers globaux
-    eu = all_data.get("EURUSD")
-    br = all_data.get("BRENT")
-    snapshot["triggers"] = {
-        "eurusd_ok":           bool(eu and eu.get("ok") and eu["prix"] and eu["prix"] < 1.15),
-        "brent_actions_ok":    bool(br and br.get("ok") and br["prix"] and br["prix"] < 90),
-        "brent_critique":      bool(br and br.get("ok") and br["prix"] and br["prix"] > 110),
-        "xad6_macd_haussier":  g("XAD6", "crossover", "daily", 0) in ["bullish", "bullish_cross"],
-        "btc_weekly_haussier": g("BTC",  "crossover", "weekly", 0) in ["bullish", "bullish_cross"],
+    snapshot["summary"] = {
+        "tier_3": sum(1 for k in TICKER_MAP if all_tiers[k]["tier"]==3),
+        "tier_2": sum(1 for k in TICKER_MAP if all_tiers[k]["tier"]==2),
+        "tier_1": sum(1 for k in TICKER_MAP if all_tiers[k]["tier"]==1),
+        "tier_0": sum(1 for k in TICKER_MAP if all_tiers[k]["tier"]==0),
+        "exit_signals_active": sum(1 for k in TICKER_MAP if all_exits[k]["status"] in ["SELL_50","SELL_100"]),
     }
 
-    # ATH connus pour alerte dépassement
-    ATH = {"PPFB": 90.0, "XAD6": 1000.0, "BTC": 126000, "PUST": 93.0, "PSP5": 54.0, "PTPXE": 37.0, "PAASI": 34.5}
-    ath_alerts = []
-    for key, ath in ATH.items():
-        p = px(key, 2)
-        if p and p > ath * 0.97:
-            ath_alerts.append(key + " a " + str(round(p/ath*100,1)) + "% de l'ATH -> verifier Fibonacci")
-    if ath_alerts:
-        snapshot["ath_alerts"] = ath_alerts
-
-    import json
     json_str = json.dumps(snapshot, ensure_ascii=False, indent=2)
 
     # Bloc à coller dans Claude
@@ -1149,7 +1266,7 @@ def generate_claude_summary():
 if __name__ == "__main__":
     import sys
     if "--claude" in sys.argv:
-        # Mode résumé Claude uniquement : python dashboard_generator.py --claude
+        # Mode résumé Claude uniquement : python dashboard_claude.py --claude
         generate_claude_summary()
     else:
         # Mode normal : génère le dashboard HTML + résumé Claude
