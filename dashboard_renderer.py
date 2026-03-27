@@ -116,7 +116,8 @@ def _sr_row(zone, devise):
     if zone is None: return "—"
     sym = "▲" if zone["type"] == "resistance" else ("▼" if zone["type"] == "support" else "◆")
     strength_map = {"strong": "●●●", "medium": "●●○", "weak": "●○○"}
-    return sym + " " + _fmt_level(zone["price"], devise) + " " + strength_map.get(zone["strength"], "")
+    ath_tag = " ★ATH" if zone.get("is_ath") else ""
+    return sym + " " + _fmt_level(zone["price"], devise) + " " + strength_map.get(zone["strength"], "") + ath_tag
 
 
 # ── STOCK PICKING ─────────────────────────────────────────────────────────────
@@ -690,11 +691,11 @@ document.addEventListener('DOMContentLoaded',function(){
     for(const z of (d.zones||[])){
       candles.createPriceLine({
         price:z.price,
-        color:srColors[z.type]||'#ffa726',
-        lineWidth:z.strength==='strong'?2:1,
+        color:z.is_ath?'#ffd700':(srColors[z.type]||'#ffa726'),
+        lineWidth:z.is_ath||z.strength==='strong'?2:1,
         lineStyle:z.strength==='weak'?LightweightCharts.LineStyle.Dashed:LightweightCharts.LineStyle.Solid,
-        axisLabelVisible:z.strength!=='weak',
-        title:z.strength==='strong'?'● '+z.type.toUpperCase():'○',
+        axisLabelVisible:z.is_ath||z.strength!=='weak',
+        title:z.is_ath?'★ ATH':(z.strength==='strong'?'● '+z.type.toUpperCase():'○'),
       });
     }
     // MA50 (or)

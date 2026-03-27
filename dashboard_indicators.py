@@ -135,6 +135,18 @@ def enrich_sr_zones(sr_zones, atr, prix, fib_levels=None, multiplier=0.5):
     - Calcule la position du prix : above_zone / in_zone / below_zone
     Rétrocompatible : conserve les champs price, type, strength, touches existants.
     """
+    # Injecter l'ATH comme résistance forte (fib_100 = ATH dynamique 2 ans)
+    if fib_levels and fib_levels.get("fib_100"):
+        ath_price = fib_levels["fib_100"]
+        if prix is None or abs(ath_price - prix) / prix <= 0.30:
+            sr_zones = list(sr_zones) + [{
+                "price":    ath_price,
+                "type":     "resistance",
+                "touches":  10,
+                "strength": "strong",
+                "is_ath":   True,
+            }]
+
     if not sr_zones:
         return []
 
@@ -162,6 +174,8 @@ def enrich_sr_zones(sr_zones, atr, prix, fib_levels=None, multiplier=0.5):
                 m["strength"] = z["strength"]
             if m["type"] != z["type"]:
                 m["type"] = "both"
+            if z.get("is_ath"):
+                m["is_ath"] = True
             m["mid_price"] = round((m["zone_low"] + m["zone_high"]) / 2, 4)
             m["price"]     = m["mid_price"]
         else:
@@ -255,12 +269,14 @@ def detect_sr_zones(ohlcv, prix, window=5, tolerance=0.015):
                 c["type"] = "both"
         else:
             clusters.append({"price": lv["price"], "type": lv["type"], "touches": 1})
-    # Score et filtre (±30% du prix actuel)
+    # Score et filtre (±30% du prix actuel, min 2 touches)
     result = []
     for c in clusters:
         if prix and abs(c["price"] - prix) / prix > 0.30:
             continue
-        c["strength"] = "strong" if c["touches"] >= 3 else ("medium" if c["touches"] == 2 else "weak")
+        if c["touches"] < 2:
+            continue
+        c["strength"] = "strong" if c["touches"] >= 5 else ("medium" if c["touches"] >= 3 else "weak")
         result.append(c)
     result.sort(key=lambda x: x["touches"], reverse=True)
-    return result[:10]
+    return result[:15]

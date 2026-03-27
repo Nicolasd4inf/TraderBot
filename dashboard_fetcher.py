@@ -209,9 +209,25 @@ def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None, ticker_rt=None
             except Exception:
                 pass
 
-        # Zones S/R — détection brute puis enrichissement ATR
+        # Zones S/R — détection sur 2 ans (enrichissement ATR)
+        df_2y = df_d.iloc[-504:]
+        ohlcv_sr = []
+        for i in range(len(df_2y)):
+            try:
+                t2 = df_2y.index[i]
+                t2 = t2.date().isoformat() if hasattr(t2, "date") else str(t2)[:10]
+                ohlcv_sr.append({
+                    "time":   t2,
+                    "high":   round(float(_col(df_2y, "High").iloc[i]), 4),
+                    "low":    round(float(_col(df_2y, "Low").iloc[i]),  4),
+                    "open":   round(float(_col(df_2y, "Open").iloc[i]), 4),
+                    "close":  round(float(_col(df_2y, "Close").iloc[i]), 4),
+                    "volume": int(float(_col(df_2y, "Volume").iloc[i])),
+                })
+            except Exception:
+                pass
         atr_14   = calc_atr(df_d)
-        sr_raw   = detect_sr_zones(ohlcv, prix)
+        sr_raw   = detect_sr_zones(ohlcv_sr, prix)
         sr_zones = enrich_sr_zones(sr_raw, atr_14, prix, fib_levels, SR_ZONE_ATR_MULTIPLIER)
         nearest_sup = next((z for z in sorted(sr_zones, key=lambda z: z["price"], reverse=True) if z["price"] < prix), None)
         nearest_res = next((z for z in sorted(sr_zones, key=lambda z: z["price"]) if z["price"] > prix), None)
@@ -368,19 +384,19 @@ def fetch_stock_picking_asset(ticker, fallbacks=None):
         except Exception:
             fib_levels = {}
 
-        # OHLCV 6 mois pour S/R
-        df_6m = df_d.iloc[-126:]
+        # OHLCV 2 ans pour S/R
+        df_2y = df_d.iloc[-504:]
         ohlcv = []
-        for i in range(len(df_6m)):
+        for i in range(len(df_2y)):
             try:
-                t = df_6m.index[i]
+                t = df_2y.index[i]
                 t = t.date().isoformat() if hasattr(t, "date") else str(t)[:10]
-                o = round(float(_c(df_6m, "Open").iloc[i]),  4)
-                c = round(float(_c(df_6m, "Close").iloc[i]), 4)
+                o = round(float(_c(df_2y, "Open").iloc[i]),  4)
+                c = round(float(_c(df_2y, "Close").iloc[i]), 4)
                 ohlcv.append({"time": t, "open": o,
-                              "high": round(float(_c(df_6m, "High").iloc[i]), 4),
-                              "low":  round(float(_c(df_6m, "Low").iloc[i]),  4),
-                              "close": c, "volume": int(float(_c(df_6m, "Volume").iloc[i])),
+                              "high": round(float(_c(df_2y, "High").iloc[i]), 4),
+                              "low":  round(float(_c(df_2y, "Low").iloc[i]),  4),
+                              "close": c, "volume": int(float(_c(df_2y, "Volume").iloc[i])),
                               "up": c >= o})
             except Exception:
                 pass
