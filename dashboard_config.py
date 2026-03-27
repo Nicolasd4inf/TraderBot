@@ -26,6 +26,8 @@ EXIT_RSI_THRESHOLDS = {
 
 ETF_KEYS = ["EQQQ", "VUSA", "IJPA", "PAASI", "EMIM", "ETZ", "VHYL"]
 
+SR_ZONE_ATR_MULTIPLIER = 0.5  # demi-largeur de chaque zone = 0.5 × ATR
+
 STOCK_PICKING_MAP = {
     "TE":    {"primary": "TE.PA",     "fallbacks": [], "nom": "Technip Energies",           "sector": "energy_services",    "market_cap": "mid",   "devise": "€"},
     "AL2SI": {"primary": "AL2SI.PA",  "fallbacks": [], "nom": "2CRSI",                      "sector": "tech_ai_servers",    "market_cap": "small", "devise": "€"},

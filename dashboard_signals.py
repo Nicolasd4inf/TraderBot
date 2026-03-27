@@ -24,9 +24,18 @@ def evaluate_tier(key, d):
     ma_cross = d.get("ma_cross")
     fib    = d.get("fibonacci", {})
     fib_382 = fib.get("fib_382")
-    sr     = d.get("sr_zones", [])
-    strong_sup = _find_strong_support(prix, sr, fib_382) if prix else None
-    above_sup  = (prix > strong_sup) if strong_sup else (bool(fib_382 and prix and prix > fib_382))
+
+    # Condition S/R zone-based : le tier ne redescend jamais à cause d'une cassure de support.
+    # Les flags support_broken / days_below_zone ajoutent uniquement des avertissements au label.
+    nearest_zone   = d.get("nearest_zone")
+    days_below     = nearest_zone.get("days_below_zone", 0) if nearest_zone else 0
+    support_broken = nearest_zone.get("support_broken", False) if nearest_zone else False
+    if nearest_zone:
+        above_sup = True  # le tier est toujours calculé normalement
+    else:
+        sr        = d.get("sr_zones", [])
+        strong_sup = _find_strong_support(prix, sr, fib_382) if prix else None
+        above_sup  = (prix > strong_sup) if strong_sup else (bool(fib_382 and prix and prix > fib_382))
 
     if cat == "metaux":
         c1_rsi = (rsi_d or 999) < 40
@@ -68,6 +77,14 @@ def evaluate_tier(key, d):
         met_list   = [t3, t2, t1, True]
 
     tier, pct, label = next((t,p,l) for (t,p,l),m in zip(tiers_list, met_list) if m)
+
+    # Avertissements zone S/R (n'abaissent jamais le tier)
+    if tier > 0 and support_broken:
+        if days_below >= 2:
+            label = label + " \u26d4 support cass\u00e9 " + str(days_below) + "j+"
+        else:
+            label = label + " \u26a0 sous support"
+
     next_missing = None
     if tier < 3:
         for k, v in conds.get("tier_" + str(tier+1), {}).items():

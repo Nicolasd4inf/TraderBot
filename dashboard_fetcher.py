@@ -12,7 +12,11 @@ from dashboard_indicators import (
     calculate_fibonacci_levels,
     get_current_fib_zone,
     detect_sr_zones,
+    calc_atr,
+    enrich_sr_zones,
+    compute_nearest_zone,
 )
+from dashboard_config import SR_ZONE_ATR_MULTIPLIER
 
 
 def fetch_euronext_price(isin, mic="ETFP"):
@@ -205,10 +209,13 @@ def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None, ticker_rt=None
             except Exception:
                 pass
 
-        # Zones S/R (calculées ici pour réutilisation dans build_card)
-        sr_zones = detect_sr_zones(ohlcv, prix)
+        # Zones S/R — détection brute puis enrichissement ATR
+        atr_14   = calc_atr(df_d)
+        sr_raw   = detect_sr_zones(ohlcv, prix)
+        sr_zones = enrich_sr_zones(sr_raw, atr_14, prix, fib_levels, SR_ZONE_ATR_MULTIPLIER)
         nearest_sup = next((z for z in sorted(sr_zones, key=lambda z: z["price"], reverse=True) if z["price"] < prix), None)
         nearest_res = next((z for z in sorted(sr_zones, key=lambda z: z["price"]) if z["price"] > prix), None)
+        nearest_zone = compute_nearest_zone(sr_zones, prix, close_d)
 
         # Prix intraday : fast_info > Tradegate > yfinance 2m
         prix_source  = "yahoo"
@@ -281,17 +288,19 @@ def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None, ticker_rt=None
             "fibo_auto": fibo_auto,
             "fibonacci": fib_levels,
             "ohlcv": ohlcv,
+            "atr_14": atr_14,
             "ma50":  ma50_val, "ma200": ma200_val, "ma_cross": ma_cross,
             "ma50_series": ma50_data, "ma200_series": ma200_data,
             "sr_zones": sr_zones,
             "nearest_sup": nearest_sup, "nearest_res": nearest_res,
+            "nearest_zone": nearest_zone,
             "daily": {
-                "rsi":       round(float(df_d["RSI"].iloc[-1]), 1),
-                "macd":      macd_d_detail,
+                "rsi":  round(float(df_d["RSI"].iloc[-1]), 1),
+                "macd": macd_d_detail,
             },
             "weekly": {
-                "rsi":       round(float(df_w["RSI"].iloc[-1]), 1) if not df_w.empty else None,
-                "macd":      macd_w_detail,
+                "rsi":  round(float(df_w["RSI"].iloc[-1]), 1) if not df_w.empty else None,
+                "macd": macd_w_detail,
             },
         }
     except Exception as e:
@@ -302,9 +311,10 @@ def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None, ticker_rt=None
         _empty = {"rsi": None, "macd": _neutral_macd}
         return {"ok": False, "prix": None, "variation": None,
                 "swing": {"high": None, "low": None}, "fibo_auto": {}, "fibonacci": {}, "ohlcv": [],
+                "atr_14": None,
                 "ma50": None, "ma200": None, "ma_cross": None,
                 "ma50_series": [], "ma200_series": [], "sr_zones": [],
-                "nearest_sup": None, "nearest_res": None,
+                "nearest_sup": None, "nearest_res": None, "nearest_zone": None,
                 "daily": _empty.copy(), "weekly": dict(_empty)}
 
 

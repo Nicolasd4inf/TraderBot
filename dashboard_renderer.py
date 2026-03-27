@@ -98,6 +98,19 @@ def _ma_cls(prix, ma_val):
     if prix is None or ma_val is None: return "neutral"
     return "bullish" if prix > ma_val else "bearish"
 
+def _zone_badge(d):
+    """Badge textuel si le prix est dans une zone S/R (support ou résistance)."""
+    nz = d.get("nearest_zone") if d else None
+    if not nz or nz.get("price_position") != "in_zone":
+        return ""
+    t = nz.get("type", "")
+    if t in ("support", "both"):
+        return "<span class='zone-badge zone-sup'>\U0001f7e2 IN_ZONE_SUP</span>"
+    if t == "resistance":
+        return "<span class='zone-badge zone-res'>\U0001f534 IN_ZONE_RES</span>"
+    return ""
+
+
 def _sr_row(zone, devise):
     """Ligne texte pour une zone S/R."""
     if zone is None: return "—"
@@ -337,7 +350,7 @@ def build_card(key, cfg, d, sig):
         + "<div class='card-top'>"
         + "<div>" + h("div","asset-name",cfg["nom"]) + h("div","asset-ticker",cfg["primary"]) + "</div>"
         + "<div class='price-block'>"
-        + h("div","price-value", cfg["devise"] + fmt_price(prix_val, cfg["devise"]) + source_badge)
+        + h("div","price-value", cfg["devise"] + fmt_price(prix_val, cfg["devise"]) + source_badge + _zone_badge(d))
         + h("div","price-change " + var_cls, var_str)
         + "</div></div>"
         + h("div","signal-badge badge-" + color, sig["label"])
@@ -430,6 +443,9 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 .ind-value.overbought{color:var(--orange)}
 .ind-value.oversold{color:var(--teal)}
 .source-tg{font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:rgba(38,198,218,.15);border:1px solid rgba(38,198,218,.4);color:var(--teal);margin-left:5px;vertical-align:middle;letter-spacing:.5px}
+.zone-badge{font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:6px;vertical-align:middle;letter-spacing:.4px}
+.zone-sup{background:rgba(0,230,118,.12);border:1px solid rgba(0,230,118,.4);color:var(--green)}
+.zone-res{background:rgba(255,71,87,.12);border:1px solid rgba(255,71,87,.4);color:var(--red)}
 .ma-row{margin-top:6px;padding-top:6px;border-top:1px dashed var(--border);grid-template-columns:1fr 1fr 1fr 1fr 1fr}
 .ind-value.sr-sup{color:var(--green);font-size:10px}
 .ind-value.sr-res{color:var(--red);font-size:10px}

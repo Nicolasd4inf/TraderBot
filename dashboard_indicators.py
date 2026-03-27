@@ -107,6 +107,123 @@ def get_current_fib_zone(price, fib):
     return "UNKNOWN"
 
 
+def calc_atr(df, period=14):
+    """Calcule l'ATR (Average True Range) sur la période donnée depuis un DataFrame OHLC."""
+    def _c(col):
+        c = df[col]
+        return c.iloc[:, 0] if hasattr(c, "columns") else c
+    high  = _c("High")
+    low   = _c("Low")
+    close = _c("Close")
+    prev_close = close.shift(1)
+    tr = pd.concat([
+        high - low,
+        (high - prev_close).abs(),
+        (low  - prev_close).abs(),
+    ], axis=1).max(axis=1)
+    atr = tr.rolling(period, min_periods=period).mean()
+    val = atr.iloc[-1]
+    return round(float(val), 6) if not np.isnan(float(val)) else None
+
+
+def enrich_sr_zones(sr_zones, atr, prix, fib_levels=None, multiplier=0.5):
+    """
+    Enrichit les zones S/R brutes :
+    - Ajoute zone_low / zone_high (± 0.5 × ATR autour du mid_price)
+    - Fusionne les zones qui se chevauchent (cumule les touches, hérite de la force la plus haute)
+    - Détecte la confluence Fibonacci (flag fibo_confluence + fibo_level)
+    - Calcule la position du prix : above_zone / in_zone / below_zone
+    Rétrocompatible : conserve les champs price, type, strength, touches existants.
+    """
+    if not sr_zones:
+        return []
+
+    half = (atr * multiplier) if atr else 0
+
+    # Étape 1 : ajouter zone_low / zone_high à chaque zone
+    zones = []
+    for z in sr_zones:
+        zc = dict(z)
+        zc["mid_price"] = z["price"]
+        zc["zone_low"]  = round(z["price"] - half, 4)
+        zc["zone_high"] = round(z["price"] + half, 4)
+        zones.append(zc)
+
+    # Étape 2 : trier par zone_low et fusionner les chevauchements
+    zones.sort(key=lambda x: x["zone_low"])
+    force_rank = {"strong": 3, "medium": 2, "weak": 1}
+    merged = []
+    for z in zones:
+        if merged and z["zone_low"] <= merged[-1]["zone_high"]:
+            m = merged[-1]
+            m["zone_high"] = max(m["zone_high"], z["zone_high"])
+            m["touches"]  += z["touches"]
+            if force_rank.get(z["strength"], 0) > force_rank.get(m["strength"], 0):
+                m["strength"] = z["strength"]
+            if m["type"] != z["type"]:
+                m["type"] = "both"
+            m["mid_price"] = round((m["zone_low"] + m["zone_high"]) / 2, 4)
+            m["price"]     = m["mid_price"]
+        else:
+            merged.append(dict(z))
+
+    # Étape 3 : confluence Fibonacci
+    fib_keys = ["fib_0", "fib_236", "fib_382", "fib_500", "fib_618", "fib_786", "fib_100"]
+    for z in merged:
+        z["fibo_confluence"] = False
+        z["fibo_level"]      = None
+        if fib_levels:
+            for fk in fib_keys:
+                fv = fib_levels.get(fk)
+                if fv and z["zone_low"] <= fv <= z["zone_high"]:
+                    z["fibo_confluence"] = True
+                    z["fibo_level"]      = fk
+                    break
+
+    # Étape 4 : position du prix
+    for z in merged:
+        if prix is None:
+            z["price_position"] = "unknown"
+        elif prix > z["zone_high"]:
+            z["price_position"] = "above_zone"
+        elif prix < z["zone_low"]:
+            z["price_position"] = "below_zone"
+        else:
+            z["price_position"] = "in_zone"
+
+    return merged
+
+
+def compute_nearest_zone(zones, prix, close_series, lookback=10):
+    """
+    Identifie la zone S/R la plus proche du prix actuel.
+    Calcule distance_pct, support_broken et days_below_zone
+    (nombre de clôtures daily consécutives sous zone_low, réinitialisé dès une clôture >= zone_low).
+    """
+    if not zones or prix is None:
+        return None
+
+    nearest = min(zones, key=lambda z: abs(z["mid_price"] - prix))
+    result  = dict(nearest)
+    result["distance_pct"]    = round(abs(nearest["mid_price"] - prix) / prix * 100, 2)
+    result["support_broken"]  = False
+    result["days_below_zone"] = 0
+
+    zone_low = nearest["zone_low"]
+    if close_series is not None and len(close_series) >= 2:
+        closes = [float(c) for c in close_series.iloc[-lookback:]]
+        count  = 0
+        for c in reversed(closes):
+            if c < zone_low:
+                count += 1
+            else:
+                break
+        result["days_below_zone"] = count
+        result["support_broken"]  = count >= 1
+
+    return result
+
+
 def detect_sr_zones(ohlcv, prix, window=5, tolerance=0.015):
     """
     Détecte les zones S/R depuis les données OHLCV.

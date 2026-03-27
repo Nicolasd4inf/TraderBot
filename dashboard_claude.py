@@ -203,21 +203,29 @@ def generate_claude_summary():
         sr_zones = d.get("sr_zones", []) if d else []
         sr_detail = [
             {
-                "prix":     round(z["price"], 4),
-                "type":     z["type"],
-                "force":    z["strength"],
-                "touches":  z["touches"],
-                "position": "below" if z["price"] < (d["prix"] or 0) else "above",
+                "prix":            round(z["price"], 4),
+                "type":            z["type"],
+                "force":           z["strength"],
+                "touches":         z["touches"],
+                "position":        "below" if z["price"] < (d["prix"] or 0) else "above",
+                "zone_low":        z.get("zone_low"),
+                "zone_high":       z.get("zone_high"),
+                "mid_price":       z.get("mid_price"),
+                "fibo_confluence": z.get("fibo_confluence", False),
+                "fibo_level":      z.get("fibo_level"),
+                "price_position":  z.get("price_position"),
             }
             for z in sorted(sr_zones, key=lambda z: z["touches"], reverse=True)[:5]
         ]
         fib = d.get("fibonacci", {}) if ok else {}
         tier_info = all_tiers.get(key, {})
         exit_info = all_exits.get(key, {})
+        nz = d.get("nearest_zone") if ok else None
         snapshot["assets"][key] = {
             "prix":       px(key, 2),
             "prix_source": d.get("prix_source", "yahoo") if ok else None,
             "var_pct":    vr(key),
+            "atr_14":     d.get("atr_14") if ok else None,
             "rsi_d":      g(key, "rsi", "daily"),
             "rsi_w":      g(key, "rsi", "weekly"),
             "macd_d":     d["daily"]["macd"]  if ok else None,
@@ -230,6 +238,7 @@ def generate_claude_summary():
             "support":    {"prix": round(n_sup["price"], 4), "force": n_sup["strength"], "touches": n_sup["touches"]} if n_sup else None,
             "resistance": {"prix": round(n_res["price"], 4), "force": n_res["strength"], "touches": n_res["touches"]} if n_res else None,
             "zones_sr":   sr_detail,
+            "nearest_zone": nz,
             "fibonacci":  fib,
             "tier":       {"level": tier_info.get("tier",0), "pct": tier_info.get("pct",0), "label": tier_info.get("label",""), "next_missing": tier_info.get("next_missing")},
             "exit_signal": {"status": exit_info.get("status","UNKNOWN"), "rsi_w": exit_info.get("rsi_w"), "dist_sell50": exit_info.get("dist_sell50")},
