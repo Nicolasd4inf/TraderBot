@@ -1,5 +1,5 @@
 """
-Logique de signaux : tier, exit, signal combiné, swing stock picking.
+Logique de signaux : tier, exit, signal combiné, swing stock picking..
 """
 
 from dashboard_config import ASSET_CATEGORY, EXIT_RSI_THRESHOLDS
