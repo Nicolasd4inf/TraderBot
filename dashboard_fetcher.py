@@ -100,17 +100,23 @@ def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None, ticker_rt=None
         df_d = None
         df_w = None
         used_ticker = ticker
+        df_full = None
         for t in all_tickers:
             tk_try   = yf.Ticker(t)
-            df_d_try = tk_try.history(period="2y", interval="1d")
-            df_w_try = tk_try.history(period="5y", interval="1wk")
+            # 3 ans pour que la MA200 couvre toute la fenêtre de 2 ans affichée
+            df_full_try = tk_try.history(period="3y", interval="1d")
+            # Hebdo sur tout l'historique : sert à l'ATH réel ; indicateurs calculés sur 5 ans
+            df_w_try    = tk_try.history(period="max", interval="1wk")
             # Yahoo renvoie parfois une ligne du jour avec Close=NaN
-            df_d_try = df_d_try.dropna(subset=["Close"])
-            df_w_try = df_w_try.dropna(subset=["Close"])
-            if not df_d_try.empty:
+            df_full_try = df_full_try.dropna(subset=["Close"])
+            df_w_try    = df_w_try.dropna(subset=["Close"])
+            if not df_full_try.empty:
+                cutoff     = df_full_try.index[-1] - pd.DateOffset(years=2)
                 tk         = tk_try
-                df_d       = df_d_try
-                df_w       = df_w_try
+                df_full    = df_full_try
+                df_d       = df_full_try[df_full_try.index > cutoff].copy()
+                df_w_max   = df_w_try
+                df_w       = df_w_try[df_w_try.index > df_w_try.index[-1] - pd.DateOffset(years=5)].copy() if not df_w_try.empty else df_w_try
                 used_ticker = t
                 if t != ticker:
                     print("  [INFO] " + ticker + " vide -> essai " + t)
@@ -142,9 +148,10 @@ def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None, ticker_rt=None
         close_d = _close(df_d)
         close_w = _close(df_w) if not df_w.empty else None
 
-        # MA50 / MA200 sur la série complète 2 ans
-        ma50_s  = close_d.rolling(50).mean()
-        ma200_s = close_d.rolling(200).mean()
+        # MA50 / MA200 calculées sur 3 ans, puis alignées sur la fenêtre 2 ans
+        close_full = _close(df_full)
+        ma50_s  = close_full.rolling(50).mean().reindex(df_d.index)
+        ma200_s = close_full.rolling(200).mean().reindex(df_d.index)
         ma50_val  = round(float(ma50_s.iloc[-1]),  4) if not pd.isna(ma50_s.iloc[-1])  else None
         ma200_val = round(float(ma200_s.iloc[-1]), 4) if not pd.isna(ma200_s.iloc[-1]) else None
         if ma50_val and ma200_val:
@@ -181,36 +188,33 @@ def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None, ticker_rt=None
             print("  [WARN Fib] " + ticker + ": " + str(e))
             fib_levels = {}
 
-        # OHLCV pour le chart (6 derniers mois) + séries MA alignées
-        ohlcv      = []
-        ma50_data  = []
-        ma200_data = []
-        vol_s      = _col(df_6m, "Volume")
-        ma50_6m    = ma50_s.iloc[-126:]
-        ma200_6m   = ma200_s.iloc[-126:]
-        for i in range(len(df_6m)):
-            try:
-                t = df_6m.index[i]
-                t = t.date().isoformat() if hasattr(t, "date") else str(t)[:10]
-                o = round(float(_col(df_6m, "Open").iloc[i]),  4)
-                c = round(float(_col(df_6m, "Close").iloc[i]), 4)
-                ohlcv.append({
-                    "time":   t,
-                    "open":   o,
-                    "high":   round(float(_col(df_6m, "High").iloc[i]), 4),
-                    "low":    round(float(_col(df_6m, "Low").iloc[i]),  4),
-                    "close":  c,
-                    "volume": int(float(vol_s.iloc[i])),
-                    "up":     c >= o,
-                })
-                v50 = ma50_6m.iloc[i]
-                if not pd.isna(v50):
-                    ma50_data.append({"time": t, "value": round(float(v50), 4)})
-                v200 = ma200_6m.iloc[i]
-                if not pd.isna(v200):
-                    ma200_data.append({"time": t, "value": round(float(v200), 4)})
-            except Exception:
-                pass
+        # Chart journalier (2 ans) + séries MA / RSI alignées
+        def _date(t):
+            return t.date().isoformat() if hasattr(t, "date") else str(t)[:10]
+
+        def _ohlcv(df):
+            out = []
+            o_s, h_s, l_s, c_s, v_s = (_col(df, k) for k in ["Open", "High", "Low", "Close", "Volume"])
+            for i in range(len(df)):
+                try:
+                    o, c = round(float(o_s.iloc[i]), 4), round(float(c_s.iloc[i]), 4)
+                    out.append({"time": _date(df.index[i]), "open": o,
+                                "high": round(float(h_s.iloc[i]), 4), "low": round(float(l_s.iloc[i]), 4),
+                                "close": c, "volume": int(float(v_s.iloc[i]) if not pd.isna(v_s.iloc[i]) else 0),
+                                "up": c >= o})
+                except Exception:
+                    pass
+            return out
+
+        def _series(s, digits=4):
+            return [{"time": _date(t), "value": round(float(v), digits)} for t, v in s.items() if not pd.isna(v)]
+
+        ohlcv      = _ohlcv(df_d)
+        ma50_data  = _series(ma50_s)
+        ma200_data = _series(ma200_s)
+        rsi_d_data = _series(df_d["RSI"], 1)
+        ohlcv_w    = _ohlcv(df_w) if not df_w.empty else []
+        rsi_w_data = _series(df_w["RSI"], 1) if not df_w.empty else []
 
         # Zones S/R — détection sur 2 ans (enrichissement ATR)
         df_2y = df_d.iloc[-504:]
@@ -232,6 +236,13 @@ def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None, ticker_rt=None
         atr_14   = calc_atr(df_d)
         sr_raw   = detect_sr_zones(ohlcv_sr, prix)
         sr_zones = enrich_sr_zones(sr_raw, atr_14, prix, fib_levels, SR_ZONE_ATR_MULTIPLIER)
+        # Zones S/R hebdo (5 ans) — utilisées par le graphique en mode hebdo
+        try:
+            atr_w      = calc_atr(df_w) if len(df_w) > 15 else None
+            sr_zones_w = enrich_sr_zones(detect_sr_zones(ohlcv_w, prix, window=3, tolerance=0.025), atr_w, prix, None, SR_ZONE_ATR_MULTIPLIER)
+        except Exception as e:
+            print("  [WARN S/R hebdo] " + ticker + ": " + str(e))
+            sr_zones_w = []
         nearest_sup = next((z for z in sorted(sr_zones, key=lambda z: z["price"], reverse=True) if z["price"] < prix), None)
         nearest_res = next((z for z in sorted(sr_zones, key=lambda z: z["price"]) if z["price"] > prix), None)
         nearest_zone = compute_nearest_zone(sr_zones, prix, close_d)
@@ -301,6 +312,14 @@ def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None, ticker_rt=None
         if prix_source != "yahoo":
             print("  [" + prix_source.upper() + "] " + ticker + " intraday: " + str(prix))
 
+        # ATH sur tout l'historique disponible (hebdo max + journalier 3 ans) et drawdown courant
+        highs = pd.concat([_col(df_full, "High"), _col(df_w_max, "High") if not df_w_max.empty else _col(df_full, "High")])
+        ath_price = float(highs.max())
+        ath_date  = _date(highs.idxmax())
+        ath = {"price": round(ath_price, 4), "date": ath_date,
+               "drawdown_pct": round((prix / ath_price - 1) * 100, 2) if prix and ath_price else None,
+               "since": _date(df_w_max.index[0]) if not df_w_max.empty else _date(df_full.index[0])}
+
         return {
             "ok": True, "prix": prix, "variation": variation, "prix_source": prix_source,
             "swing": {"high": round(high_6m, 4), "low": round(low_6m, 4)},
@@ -310,7 +329,10 @@ def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None, ticker_rt=None
             "atr_14": atr_14,
             "ma50":  ma50_val, "ma200": ma200_val, "ma_cross": ma_cross,
             "ma50_series": ma50_data, "ma200_series": ma200_data,
+            "ath": ath,
+            "ohlcv_w": ohlcv_w, "rsi_d_series": rsi_d_data, "rsi_w_series": rsi_w_data,
             "sr_zones": sr_zones,
+            "sr_zones_w": sr_zones_w,
             "nearest_sup": nearest_sup, "nearest_res": nearest_res,
             "nearest_zone": nearest_zone,
             "daily": {

@@ -21,10 +21,10 @@ import os
 import webbrowser
 from datetime import datetime
 
-from dashboard_config import TICKER_MAP, STOCK_PICKING_MAP, ETF_KEYS
+from dashboard_config import TICKER_MAP, STOCK_PICKING_MAP
 from dashboard_fetcher import fetch_asset, fetch_stock_picking_asset
 from dashboard_signals import evaluate_signal, evaluate_tier, evaluate_exit_signal, compute_swing_signal
-from dashboard_renderer import build_card, build_stock_picking_section, build_html, rc
+from dashboard_renderer import build_row, build_detail, build_html, fmt_price, fmt_var
 
 
 def generate_dashboard():
@@ -54,72 +54,81 @@ def generate_dashboard():
 
     tier_counts = {t: sum(1 for k in TICKER_MAP if all_tiers[k]["tier"] == t) for t in range(4)}
     exit_count  = sum(1 for k in TICKER_MAP if all_exits[k]["status"] in ["SELL_50","SELL_100"])
-
-    # ETF ranking (tri par RSI D croissant = le plus survendu en premier)
-    etf_ranking = sorted(
-        [{"ticker": k,
-          "rsi_d": all_data[k]["daily"]["rsi"] if all_data[k] and all_data[k].get("ok") else None,
-          "tier": all_tiers[k]["tier"]}
-         for k in ETF_KEYS if all_data.get(k) and all_data[k].get("ok")],
-        key=lambda x: x["rsi_d"] if x["rsi_d"] else 999
-    )
-    for i, item in enumerate(etf_ranking):
-        item["rank"] = i + 1
-
-    # Cross-asset signals
-    gold_t  = all_tiers.get("GOLD", {}).get("tier", 0)
-    phag_t  = all_tiers.get("PHAG", {}).get("tier", 0)
     death_crosses = [k for k in TICKER_MAP
                      if (all_data.get(k) or {}).get("ok") and all_data[k].get("ma_cross") == "death"]
-    etf_first = etf_ranking[0]["ticker"] if etf_ranking else "—"
-    etf_t1    = sum(1 for k in ETF_KEYS if all_tiers.get(k, {}).get("tier", 0) >= 1)
-
     risk = "HIGH" if exit_count > 0 or len(death_crosses) > len(TICKER_MAP) // 2 else ("LOW" if tier_counts[3] > 0 else "MEDIUM")
 
     conds = {
         "t3": tier_counts[3], "t2": tier_counts[2], "t1": tier_counts[1], "t0": tier_counts[0],
-        "exits": exit_count, "risk": risk,
-        "etf_ranking": etf_ranking,
-        "cross": {
-            "metals_conviction": "high" if gold_t >= 2 and phag_t >= 2 else "normal",
-            "death_crosses": death_crosses,
-            "etf_first": etf_first,
-            "etf_t1_count": etf_t1,
-        },
+        "exits": exit_count, "risk": risk, "death_crosses": death_crosses,
     }
 
-    cards_by_cat = {"metaux": "", "crypto": "", "actions": "", "titres": ""}
-    for key, cfg in TICKER_MAP.items():
-        cards_by_cat[cfg["categorie"]] += build_card(key, cfg, all_data[key], signals[key])
-
-    # Données chart par actif
-    charts_data = {}
-    for key, d in all_data.items():
-        if not d or not d.get("ok") or not d.get("ohlcv"):
-            continue
-        charts_data[key] = {
-            "prix":        d["prix"],
-            "ohlcv":       d["ohlcv"],
-            "fibo_auto":   {str(r): v for r, v in d.get("fibo_auto", {}).items()},
-            "zones":       d.get("sr_zones", []),
-            "ma50_series":  d.get("ma50_series",  []),
-            "ma200_series": d.get("ma200_series", []),
-        }
-    charts_json = json.dumps(charts_data, ensure_ascii=False)
-
-    # Stock picking
-    print("\n  Stock picking :")
-    sp_raw = {}
+    # Score swing pour les actions individuelles
+    print("\n  Score swing (actions) :")
+    swings = {}
     for key, cfg in STOCK_PICKING_MAP.items():
         print("  -> SP " + key + " (" + cfg["primary"] + ")...")
-        d = fetch_stock_picking_asset(cfg["primary"], fallbacks=cfg.get("fallbacks", []))
-        if d:
-            d["swing"] = compute_swing_signal(d)
-        sp_raw[key] = d
+        d_sp = fetch_stock_picking_asset(cfg["primary"], fallbacks=cfg.get("fallbacks", []))
+        if d_sp:
+            swings[key] = compute_swing_signal(d_sp)
 
-    sp_section = build_stock_picking_section(sp_raw)
+    # Lignes du tableau + panneaux de détail
+    rows_by_cat, details_html = {}, ""
+    for key, cfg in TICKER_MAP.items():
+        rows_by_cat.setdefault(cfg["categorie"], "")
+        rows_by_cat[cfg["categorie"]] += build_row(key, cfg, all_data[key], signals[key], swings.get(key))
+        details_html += build_detail(key, cfg, all_data[key], signals[key], swings.get(key))
 
-    html = build_html(now, cards_by_cat, conds, errors, charts_json, sp_section=sp_section)
+    # Données graphiques (format compact : tableaux plutôt qu'objets)
+    def _bars(lst):
+        return [[b["time"], b["open"], b["high"], b["low"], b["close"], b["volume"]] for b in lst]
+
+    def _pts(lst):
+        return [[p["time"], p["value"]] for p in lst]
+
+    def _chart_zones(zones, prix, n=3):
+        """Les n zones S/R les plus importantes pour le graphique :
+        meilleur support sous le prix, meilleure résistance au-dessus, puis la meilleure restante."""
+        if not zones or not prix:
+            return []
+        weight = {"strong": 3, "medium": 2, "weak": 1}
+
+        def score(z):
+            touches = z.get("touches", 0) - (10 if z.get("is_ath") else 0)  # l'ATH injecté compte 10 touches fictives
+            return touches * weight.get(z.get("strength"), 1) + (2 if z.get("fibo_confluence") else 0)
+
+        ranked = sorted(zones, key=score, reverse=True)
+        below  = [z for z in ranked if z["price"] <  prix]
+        above  = [z for z in ranked if z["price"] >= prix]
+        keep   = below[:1] + above[:1]
+        keep  += [z for z in ranked if z not in keep][:max(0, n - len(keep))]
+        return [{"p": z["price"], "side": "s" if z["price"] < prix else "r", "s": z["strength"],
+                 "n": z.get("touches", 0) - (10 if z.get("is_ath") else 0), "ath": bool(z.get("is_ath"))} for z in keep]
+
+    assets = {}
+    for key, cfg in TICKER_MAP.items():
+        d  = all_data.get(key)
+        ok = bool(d and d.get("ok"))
+        var_txt, var_cls = fmt_var(d.get("variation") if ok else None)
+        fib = (d.get("fibonacci") or {}) if ok else {}
+        assets[key] = {
+            "nom": cfg["nom"], "ticker": cfg["primary"],
+            "prix_txt": (fmt_price(d["prix"]) + " " + cfg["devise"]) if ok and d.get("prix") else "—",
+            "var_txt": var_txt, "var_cls": var_cls,
+            "d":     _bars(d.get("ohlcv", []))   if ok else [],
+            "w":     _bars(d.get("ohlcv_w", [])) if ok else [],
+            "ma50":  _pts(d.get("ma50_series", []))  if ok else [],
+            "ma200": _pts(d.get("ma200_series", [])) if ok else [],
+            "rd":    _pts(d.get("rsi_d_series", [])) if ok else [],
+            "rw":    _pts(d.get("rsi_w_series", [])) if ok else [],
+            "zd":    _chart_zones(d.get("sr_zones", []),   d.get("prix")) if ok else [],
+            "zw":    _chart_zones(d.get("sr_zones_w", []), d.get("prix")) if ok else [],
+            "fib":   [[lbl, fib[k]] for k, lbl in [("fib_236", "23.6"), ("fib_382", "38.2"), ("fib_500", "50"),
+                                                   ("fib_618", "61.8"), ("fib_786", "78.6")] if fib.get(k)],
+        }
+    assets_json = json.dumps(assets, ensure_ascii=False, separators=(",", ":"))
+
+    html = build_html(now, rows_by_cat, details_html, conds, errors, assets_json)
     out  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard.html")
     with open(out, "w", encoding="utf-8") as f:
         f.write(html)
@@ -129,11 +138,11 @@ def generate_dashboard():
     for key, sig in signals.items():
         if sig["color"] in ["green", "teal"]:
             print("    [OK] " + key + " - " + sig["label"])
-    sp_buys = [k for k, d in sp_raw.items() if d and d.get("swing", {}).get("signal") in ["SWING_BUY", "PREPARING"]]
+    sp_buys = [k for k, sw in swings.items() if sw["signal"] in ["SWING_BUY", "PREPARING"]]
     if sp_buys:
         print("\n  Stock picking signaux :")
         for k in sp_buys:
-            sw = sp_raw[k]["swing"]
+            sw = swings[k]
             print("    [SP] " + k + " — " + sw["signal"] + " (score " + str(sw["score"]) + ")")
     print()
     if not os.environ.get("CI"):
@@ -226,6 +235,7 @@ def generate_claude_summary():
             "prix_source": d.get("prix_source", "yahoo") if ok else None,
             "var_pct":    vr(key),
             "atr_14":     d.get("atr_14") if ok else None,
+            "ath":        d.get("ath") if ok else None,
             "rsi_d":      g(key, "rsi", "daily"),
             "rsi_w":      g(key, "rsi", "weekly"),
             "macd_d":     d["daily"]["macd"]  if ok else None,
@@ -324,6 +334,8 @@ def generate_claude_summary():
 
 if __name__ == "__main__":
     import sys
+    # Console Windows (cp1252) : éviter UnicodeEncodeError sur les labels avec emojis
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     if "--claude" in sys.argv:
         # Mode résumé Claude uniquement : python dashboard_claude.py --claude
         generate_claude_summary()
