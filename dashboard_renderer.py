@@ -29,7 +29,7 @@ CAT_TITLES = {
     "actions": "ETF",
     "titres":  "Actions",
 }
-CAT_ORDER = ["metaux", "actions", "titres", "crypto"]
+CAT_ORDER = ["metaux", "crypto", "actions", "titres"]
 
 
 def esc(s):

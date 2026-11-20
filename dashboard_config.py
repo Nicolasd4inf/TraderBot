@@ -6,6 +6,8 @@ TICKER_MAP = {
     # ── Métaux précieux (ETC) ──
     "GOLD":  {"primary": "GOLD.PA",  "fallbacks": ["GLDA.PA"],           "nom": "Or — Amundi Physical Gold",             "categorie": "metaux",  "devise": "€", "isin": "FR0013416716", "euronext_mic": "ETFP"},
     "PHAG":  {"primary": "PHAG.AS",  "fallbacks": ["PHAG.L"],            "nom": "Argent — WisdomTree Physical Silver",   "categorie": "metaux",  "devise": "€", "isin": "JE00B1VS3333"},
+    # ── Crypto ──
+    "BTC":   {"primary": "BTC-USD",  "fallbacks": ["BTC-EUR"],           "nom": "Bitcoin",                               "categorie": "crypto",  "devise": "$"},
     # ── ETF actions ──
     "EQQQ":  {"primary": "EQQQ.PA",  "fallbacks": ["EQQQ.AS","EQQQ.L"],  "nom": "Nasdaq-100 — Invesco EQQQ",             "categorie": "actions", "devise": "€", "isin": "IE0032077012"},
     "SPEEU": {"primary": "SPEEU.PA", "fallbacks": [],                    "nom": "S&P 500 Scored — BNP Paribas Easy",     "categorie": "actions", "devise": "€", "isin": "IE0004J37T45", "euronext_mic": "ETFP"},
