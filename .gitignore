@@ -9,7 +9,8 @@ dashboard.html
 # Logs
 logs/
 *.log
-
+.sfdx/
+tradingbothistory/
 # Modèles ML (trop lourds pour git)
 *.zip
 

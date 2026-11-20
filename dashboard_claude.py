@@ -69,12 +69,12 @@ def generate_dashboard():
     # Cross-asset signals
     gold_t  = all_tiers.get("GOLD", {}).get("tier", 0)
     phag_t  = all_tiers.get("PHAG", {}).get("tier", 0)
-    btc_d   = all_data.get("BTC") or {}
-    btc_death = btc_d.get("ma_cross") == "death" if btc_d.get("ok") else False
+    death_crosses = [k for k in TICKER_MAP
+                     if (all_data.get(k) or {}).get("ok") and all_data[k].get("ma_cross") == "death"]
     etf_first = etf_ranking[0]["ticker"] if etf_ranking else "—"
     etf_t1    = sum(1 for k in ETF_KEYS if all_tiers.get(k, {}).get("tier", 0) >= 1)
 
-    risk = "HIGH" if btc_death or exit_count > 0 else ("LOW" if tier_counts[3] > 0 else "MEDIUM")
+    risk = "HIGH" if exit_count > 0 or len(death_crosses) > len(TICKER_MAP) // 2 else ("LOW" if tier_counts[3] > 0 else "MEDIUM")
 
     conds = {
         "t3": tier_counts[3], "t2": tier_counts[2], "t1": tier_counts[1], "t0": tier_counts[0],
@@ -82,13 +82,13 @@ def generate_dashboard():
         "etf_ranking": etf_ranking,
         "cross": {
             "metals_conviction": "high" if gold_t >= 2 and phag_t >= 2 else "normal",
-            "btc_death_cross": btc_death,
+            "death_crosses": death_crosses,
             "etf_first": etf_first,
             "etf_t1_count": etf_t1,
         },
     }
 
-    cards_by_cat = {"metaux": "", "crypto": "", "actions": ""}
+    cards_by_cat = {"metaux": "", "crypto": "", "actions": "", "titres": ""}
     for key, cfg in TICKER_MAP.items():
         cards_by_cat[cfg["categorie"]] += build_card(key, cfg, all_data[key], signals[key])
 

@@ -601,14 +601,14 @@ def build_html(now, cards_by_cat, conds, errors, charts_json="{}", sp_section=""
     # Cross signals
     cross = conds.get("cross", {})
     metals_conv = cross.get("metals_conviction","normal")
-    btc_death   = cross.get("btc_death_cross", False)
+    death_list  = cross.get("death_crosses", [])
     etf_first   = cross.get("etf_first","—")
     etf_t1      = cross.get("etf_t1_count", 0)
     cross_html = (
         "<div class='section-title'>Signaux Croises</div>"
         + "<div class='cross-signals'>"
         + "<div class='cross-card'><div class='cc-label'>Conviction Metaux</div><div class='cc-value cc-" + ("green" if metals_conv=="high" else "yellow") + "'>" + metals_conv.upper() + "</div></div>"
-        + "<div class='cross-card'><div class='cc-label'>BTC MA Cross</div><div class='cc-value cc-" + ("red" if btc_death else "green") + "'>" + ("DEATH CROSS" if btc_death else "OK") + "</div></div>"
+        + "<div class='cross-card'><div class='cc-label'>Death Cross MA50/200</div><div class='cc-value cc-" + ("red" if death_list else "green") + "'>" + (str(len(death_list)) + " actif(s)" if death_list else "AUCUN") + "</div><div style='font-size:10px;color:var(--text-dim)'>" + ", ".join(death_list) + "</div></div>"
         + "<div class='cross-card'><div class='cc-label'>ETF Premier de classe</div><div class='cc-value cc-yellow'>" + str(etf_first) + "</div><div style='font-size:10px;color:var(--text-dim)'>" + str(etf_t1) + " ETF(s) en T1+</div></div>"
         + "</div>"
     )
@@ -617,8 +617,9 @@ def build_html(now, cards_by_cat, conds, errors, charts_json="{}", sp_section=""
         "metaux":  "ETCs Metaux Precieux · CTO",
         "crypto":  "Crypto",
         "actions": "ETFs Actions · CTO",
+        "titres":  "Actions individuelles · CTO",
     }
-    ORDER = ["metaux", "crypto", "actions"]
+    ORDER = ["metaux", "crypto", "actions", "titres"]
     cards_html = ""
     for cat in ORDER:
         if cards_by_cat.get(cat):

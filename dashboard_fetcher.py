@@ -104,6 +104,9 @@ def fetch_asset(ticker, isin_fallback=None, ticker_fallback=None, ticker_rt=None
             tk_try   = yf.Ticker(t)
             df_d_try = tk_try.history(period="2y", interval="1d")
             df_w_try = tk_try.history(period="5y", interval="1wk")
+            # Yahoo renvoie parfois une ligne du jour avec Close=NaN
+            df_d_try = df_d_try.dropna(subset=["Close"])
+            df_w_try = df_w_try.dropna(subset=["Close"])
             if not df_d_try.empty:
                 tk         = tk_try
                 df_d       = df_d_try
@@ -345,6 +348,9 @@ def fetch_stock_picking_asset(ticker, fallbacks=None):
             tk_try   = yf.Ticker(t)
             df_d_try = tk_try.history(period="2y", interval="1d")
             df_w_try = tk_try.history(period="5y", interval="1wk")
+            # Yahoo renvoie parfois une ligne du jour avec Close=NaN
+            df_d_try = df_d_try.dropna(subset=["Close"])
+            df_w_try = df_w_try.dropna(subset=["Close"])
             if not df_d_try.empty:
                 tk  = tk_try
                 df_d = df_d_try
